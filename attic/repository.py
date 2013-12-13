@@ -71,8 +71,8 @@ class Repository(object):
         self.path = path
         if not os.path.isdir(path):
             raise self.DoesNotExist(path)
-        self.lock_fd = open(os.path.join(path, 'config'), 'r')
-        fcntl.flock(self.lock_fd, fcntl.LOCK_EX)
+        self.lock_fd = open(os.path.join(path, 'config'), 'a')
+        fcntl.lockf(self.lock_fd, fcntl.LOCK_EX)
         self.config = RawConfigParser()
         self.config.read(os.path.join(self.path, 'config'))
         if self.config.getint('repository', 'version') != 1:
