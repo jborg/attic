@@ -58,8 +58,8 @@ class Cache(object):
     def open(self):
         if not os.path.isdir(self.path):
             raise Exception('%s Does not look like an Attic cache' % self.path)
-        self.lock_fd = open(os.path.join(self.path, 'README'), 'r+')
-        fcntl.flock(self.lock_fd, fcntl.LOCK_EX)
+        self.lock_fd = open(os.path.join(self.path, 'README'), 'a')
+        fcntl.lockf(self.lock_fd, fcntl.LOCK_EX)
         self.rollback()
         self.config = RawConfigParser()
         self.config.read(os.path.join(self.path, 'config'))
