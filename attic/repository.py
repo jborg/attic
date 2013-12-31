@@ -296,9 +296,12 @@ class LoggedIO(object):
     def _segment_names(self, reverse=False):
         for dirpath, dirs, filenames in os.walk(os.path.join(self.path, 'data')):
             dirs.sort(key=int, reverse=reverse)
-            filenames.sort(key=int, reverse=reverse)
+            filenames.sort(key=lambda x: int(x) if x.isdigit() else 0, reverse=reverse)
             for filename in filenames:
-                yield int(filename), os.path.join(dirpath, filename)
+                try:
+                    yield int(filename), os.path.join(dirpath, filename)
+                except ValueError:
+                    pass
 
     def cleanup(self):
         """Delete segment files left by aborted transactions
