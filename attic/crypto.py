@@ -6,6 +6,9 @@ from ctypes.util import find_library
 import struct
 
 libcrypto = cdll.LoadLibrary(find_library('crypto'))
+# If distro-provided libcrypto is too old, try a local installation
+if not hasattr(libcrypto, 'PKCS5_PBKDF2_HMAC'):
+    libcrypto = cdll.LoadLibrary('/usr/local/ssl/lib/libcrypto.so')
 # Default libcrypto on OS X is too old, try the brew version
 if not hasattr(libcrypto, 'PKCS5_PBKDF2_HMAC') and sys.platform == 'darwin':
     libcrypto = cdll.LoadLibrary('/usr/local/opt/openssl/lib/libcrypto.dylib')
