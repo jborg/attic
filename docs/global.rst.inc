@@ -17,3 +17,5 @@
 .. _issue tracker: https://github.com/jborg/attic/issues
 .. _userspace filesystems: https://en.wikipedia.org/wiki/Filesystem_in_Userspace
 .. _librelist: http://librelist.com/
+.. _Cython: http://cython.org
+
