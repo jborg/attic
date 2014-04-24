@@ -57,7 +57,6 @@ except ImportError:
     crypto_source = crypto_source.replace('.pyx', '.c')
     chunker_source = chunker_source.replace('.pyx', '.c')
     hashindex_source = hashindex_source.replace('.pyx', '.c')
-    hashindex_source_win = hashindex_source_win.replace('.pyx', '.c')
     from distutils.command.build_ext import build_ext
     if not all(os.path.exists(path) for path in [crypto_source, chunker_source, hashindex_source, acl_source]):
         raise ImportError('The GIT version of Attic needs Cython. Install Cython or use a released version')

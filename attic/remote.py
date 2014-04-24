@@ -9,13 +9,8 @@ from .hashindex import NSIndex
 from .helpers import Error, IntegrityError, StdAsyncIO
 from .repository import Repository
 
-if sys.platform.startswith('win'):
-    import msvcrt
-else:
+if not sys.platform.startswith('win'):
     import fcntl
-
-    
-
     
 BUFSIZE = 10 * 1024 * 1024
 
@@ -35,11 +30,13 @@ class RepositoryServer(object):
         self.restrict_to_paths = restrict_to_paths
 
     def serve(self):
-        self.t=StdAsyncIO(BUFSIZE)
-        # Make stdin non-blocking
-        self.t.make_nonblocking(sys.stdin.fileno())
-        # Make stdout blocking
-        self.t.make_blocking(sys.stdout.fileno())
+        if not sys.platform.startswith('win'):
+            # Make stdin non-blocking
+            fl = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
+            fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl | os.O_NONBLOCK)
+            # Make stdout blocking
+            fl = fcntl.fcntl(sys.stdout.fileno(), fcntl.F_GETFL)
+            fcntl.fcntl(sys.stdout.fileno(), fcntl.F_SETFL, fl & ~os.O_NONBLOCK)
         unpacker = msgpack.Unpacker(use_list=False)
         while True:
             r, w, es = self.t.select([sys.stdin], [], [], 10)
@@ -115,9 +112,9 @@ class RemoteRepository(object):
         self.p = Popen(args, bufsize=0, stdin=PIPE, stdout=PIPE)
         self.stdin_fd = self.p.stdin.fileno()
         self.stdout_fd = self.p.stdout.fileno()
-        self.t=StdAsyncIO(BUFSIZE)
-        self.t.make_nonblocking(self.stdin_fd)
-        self.t.make_nonblocking(self.stdout_fd)
+        if not sys.platform.startswith('win'):
+            fcntl.fcntl(self.stdin_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdin_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+            fcntl.fcntl(self.stdout_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdout_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
         self.r_fds = [self.stdout_fd]
         self.x_fds = [self.stdin_fd, self.stdout_fd]
 

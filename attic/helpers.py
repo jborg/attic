@@ -14,14 +14,10 @@ from fnmatch import translate
 from operator import attrgetter
 
 
-if sys.platform.startswith('win'):
-    import threading,signal
-    import queue
-else:
+if not sys.platform.startswith('win'):
     import grp
-    import pwd   
+    import pwd
     import fcntl
-   
     
 import attic.hashindex
 import attic.chunker
@@ -54,26 +50,28 @@ class UpgradableLock:
             self.fd = open(path, 'r+')
         except IOError:
             self.fd = open(path, 'r')
-        if exclusive:
-            portalocker.lock(self.fd,portalocker.LOCK_EX)
+        if sys.platform.startswith('win'):
+            #Open is always exclusive in win, posible implementation:
+            #   http://code.activestate.com/recipes/578453-python-single-instance-cross-platform/
+            self.is_exclusive = True
         else:
-            portalocker.lock(self.fd,portalocker.LOCK_SH)
-        self.is_exclusive = exclusive
+            if exclusive:
+                fcntl.lockf(self.fd, fcntl.LOCK_EX)
+            else:
+                fcntl.lockf(self.fd, fcntl.LOCK_SH)
+            self.is_exclusive = exclusive
 
     def upgrade(self):
-        print ("lock upgrade")
-        try:
-            if sys.platform.startswith('win'):
-                portalocker.unlock(self.fd)
-            portalocker.lock(self.fd,portalocker.LOCK_EX)
-        except OSError as e:
-            raise self.LockUpgradeFailed(self.path)
-        self.is_exclusive = True
-        print ("upgraded")
+        if not sys.platform.startswith('win'):
+            try:
+                fcntl.lockf(self.fd, fcntl.LOCK_EX)
+            except OSError as e:
+                raise self.LockUpgradeFailed(self.path)
+            self.is_exclusive = True
 
     def release(self):
-        print ("unlocking")
-        portalocker.unlock(self.fd)
+        if not sys.platform.startswith('win'):
+            fcntl.lockf(self.fd, fcntl.LOCK_UN)
         self.fd.close()
 
 
@@ -396,7 +394,7 @@ class Location:
                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
     if sys.platform.startswith('win'):                            
         file_re = re.compile(r'(?P<proto>file)://'
-                         r'(?P<path>[\w]:[^:]+|[^:]+)(?:::(?P<archive>.+))?')
+                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
     else:
         file_re = re.compile(r'(?P<proto>file)://'
                          r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
