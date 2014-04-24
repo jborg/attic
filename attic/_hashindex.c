@@ -235,12 +235,14 @@ static HashIndex *
 hashindex_init(int capacity, int key_size, int value_size)
 {
     FILE *fd;
+    //This must be C89 compatible to compile in windows
     char bucket[MAX_BUCKET_SIZE] = "";
+    char tmp_magic[] = MAGIC;
     int i, bucket_size;
     HashHeader header;
     capacity = MAX(MIN_BUCKETS, capacity);
 
-    memcmp(header.magic, MAGIC, 8);
+    memcpy(header.magic,tmp_magic,8);
     header.num_entries = 0;
     header.key_size = key_size; 
     header.value_size = value_size;
