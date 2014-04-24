@@ -16,6 +16,14 @@ if sys.version_info < min_python:
     print("Attic requires Python %d.%d or later" % min_python)
     sys.exit(1)
 
+# Win32 hacks
+if sys.platform == 'win32':
+    possible_openssl_prefixes_win32 = ['C:/OpenSSL-Win32/lib','C:/OpenSSL-Win32']
+    libraries = ['libeay32','ssleay32']
+    hashindex_source_win = 'attic/_mman-win32.c'
+else: 
+    hashindex_source_win = ''
+    libraries = ['crypto']
 try:
     from setuptools import setup, Extension
 except ImportError:
@@ -40,7 +48,7 @@ try:
             versioneer.cmd_sdist.__init__(self, *args, **kwargs)
 
         def make_distribution(self):
-            self.filelist.extend(['attic/crypto.c', 'attic/chunker.c', 'attic/_chunker.c', 'attic/hashindex.c', 'attic/_hashindex.c', 'attic/platform_linux.c', 'attic/platform_freebsd.c', 'attic/platform_darwin.c'])
+            self.filelist.extend([hashindex_source_win]+['attic/crypto.c', 'attic/chunker.c', 'attic/_chunker.c', 'attic/hashindex.c', 'attic/_hashindex.c'])
             super(Sdist, self).make_distribution()
 
 except ImportError:
@@ -51,9 +59,7 @@ except ImportError:
     crypto_source = crypto_source.replace('.pyx', '.c')
     chunker_source = chunker_source.replace('.pyx', '.c')
     hashindex_source = hashindex_source.replace('.pyx', '.c')
-    platform_linux_source = platform_linux_source.replace('.pyx', '.c')
-    platform_freebsd_source = platform_freebsd_source.replace('.pyx', '.c')
-    platform_darwin_source = platform_darwin_source.replace('.pyx', '.c')
+    hashindex_source_win = hashindex_source_win.replace('.pyx', '.c')
     from distutils.command.build_ext import build_ext
     if not all(os.path.exists(path) for path in [crypto_source, chunker_source, hashindex_source, platform_linux_source, platform_freebsd_source]):
         raise ImportError('The GIT version of Attic needs Cython. Install Cython or use a released version')
@@ -68,7 +74,7 @@ def detect_openssl(prefixes):
                     return prefix
 
 
-possible_openssl_prefixes = ['/usr', '/usr/local', '/usr/local/opt/openssl', '/usr/local/ssl', '/usr/local/openssl', '/usr/local/attic', '/opt/local']
+possible_openssl_prefixes = ['/usr', '/usr/local', '/usr/local/opt/openssl', '/usr/local/ssl', '/usr/local/openssl', '/usr/local/attic'] + possible_openssl_prefixes_win32
 if os.environ.get('ATTIC_OPENSSL_PREFIX'):
     possible_openssl_prefixes.insert(0, os.environ.get('ATTIC_OPENSSL_PREFIX'))
 ssl_prefix = detect_openssl(possible_openssl_prefixes)
@@ -105,7 +111,7 @@ setup(
     description='Deduplicated backups',
     long_description=long_description,
     license='BSD',
-    platforms=['Linux', 'MacOS X'],
+    platforms=['Linux', 'MacOS X', 'Win32'],
     classifiers=[
         'Development Status :: 4 - Beta',
         'Environment :: Console',
@@ -121,6 +127,10 @@ setup(
     packages=['attic', 'attic.testsuite'],
     scripts=['scripts/attic'],
     cmdclass=cmdclass,
-    ext_modules=ext_modules,
+    ext_modules=[
+        Extension('attic.crypto', [crypto_source], libraries=libraries, include_dirs=include_dirs, library_dirs=library_dirs),
+        Extension('attic.chunker', [chunker_source]),
+        Extension('attic.hashindex', [hashindex_source]+[hashindex_source_win])
+    ],
     install_requires=['msgpack-python']
 )

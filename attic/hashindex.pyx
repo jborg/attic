@@ -118,7 +118,7 @@ cdef class NSIndex(IndexBase):
             key = hashindex_get(self.index, <char *>marker)
             if marker is None:
                 raise IndexError
-            iter.key = key - 32
+            iter.key = <void *>(<int>key - 32)
         return iter
 
 
@@ -137,7 +137,7 @@ cdef class NSKeyIterator:
         self.key = hashindex_next_key(self.index, <char *>self.key)
         if not self.key:
             raise StopIteration
-        cdef int *value = <int *>(self.key + 32)
+        cdef int *value = <int *>(<int>self.key + 32)
         return (<char *>self.key)[:32], (_le32toh(value[0]), _le32toh(value[1]))
 
 
@@ -175,7 +175,7 @@ cdef class ChunkIndex(IndexBase):
             key = hashindex_get(self.index, <char *>marker)
             if marker is None:
                 raise IndexError
-            iter.key = key - 32
+            iter.key = <void *>(<int>key - 32)
         return iter
 
     def summarize(self):
@@ -199,5 +199,5 @@ cdef class ChunkKeyIterator:
         self.key = hashindex_next_key(self.index, <char *>self.key)
         if not self.key:
             raise StopIteration
-        cdef int *value = <int *>(self.key + 32)
+        cdef int *value = <int *>(<int>self.key + 32)
         return (<char *>self.key)[:32], (_le32toh(value[0]), _le32toh(value[1]), _le32toh(value[2]))
