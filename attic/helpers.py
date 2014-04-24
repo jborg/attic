@@ -1,9 +1,7 @@
 import argparse
 import binascii
-import grp
 import msgpack
 import os
-import pwd
 import re
 import stat
 import sys
@@ -11,8 +9,13 @@ import time
 from datetime import datetime, timezone, timedelta
 from fnmatch import translate
 from operator import attrgetter
-import fcntl
 
+
+if not sys.platform.startswith('win'):
+    import grp
+    import pwd
+    import fcntl
+    
 import attic.hashindex
 import attic.chunker
 import attic.crypto
@@ -45,29 +48,28 @@ class UpgradableLock:
             self.fd = open(path, 'r+')
         except IOError:
             self.fd = open(path, 'r')
-        try:
+        if sys.platform.startswith('win'):
+            #Open is always exclusive in win, posible implementation:
+            #   http://code.activestate.com/recipes/578453-python-single-instance-cross-platform/
+            self.is_exclusive = True
+        else:
             if exclusive:
                 fcntl.lockf(self.fd, fcntl.LOCK_EX)
             else:
                 fcntl.lockf(self.fd, fcntl.LOCK_SH)
-        # Python 3.2 raises IOError, Python3.3+ raises OSError
-        except (IOError, OSError):
-            if exclusive:
-                raise self.WriteLockFailed(self.path)
-            else:
-                raise self.ReadLockFailed(self.path)
-        self.is_exclusive = exclusive
+            self.is_exclusive = exclusive
 
     def upgrade(self):
-        try:
-            fcntl.lockf(self.fd, fcntl.LOCK_EX)
-        # Python 3.2 raises IOError, Python3.3+ raises OSError
-        except (IOError, OSError):
-            raise self.WriteLockFailed(self.path)
-        self.is_exclusive = True
+        if not sys.platform.startswith('win'):
+            try:
+                fcntl.lockf(self.fd, fcntl.LOCK_EX)
+            except OSError as e:
+                raise self.LockUpgradeFailed(self.path)
+            self.is_exclusive = True
 
     def release(self):
-        fcntl.lockf(self.fd, fcntl.LOCK_UN)
+        if not sys.platform.startswith('win'):
+            fcntl.lockf(self.fd, fcntl.LOCK_UN)
         self.fd.close()
 
 
@@ -353,46 +355,32 @@ def memoize(function):
 def uid2user(uid, default=None):
     try:
         return pwd.getpwuid(uid).pw_name
-    except KeyError:
-        return default
+    except (KeyError,NameError):
+        return None
 
 
 @memoize
 def user2uid(user, default=None):
     try:
         return user and pwd.getpwnam(user).pw_uid
-    except KeyError:
-        return default
+    except (KeyError,NameError):
+        return None
 
 
 @memoize
 def gid2group(gid, default=None):
     try:
         return grp.getgrgid(gid).gr_name
-    except KeyError:
-        return default
+    except (KeyError,NameError):
+        return None
 
 
 @memoize
 def group2gid(group, default=None):
     try:
         return group and grp.getgrnam(group).gr_gid
-    except KeyError:
-        return default
-
-
-def posix_acl_use_stored_uid_gid(acl):
-    """Replace the user/group field with the stored uid/gid
-    """
-    entries = []
-    for entry in acl.decode('ascii').split('\n'):
-        if entry:
-            fields = entry.split(':')
-            if len(fields) == 4:
-                entries.append(':'.join([fields[0], fields[3], fields[2]]))
-            else:
-                entries.append(entry)
-    return ('\n'.join(entries)).encode('ascii')
+    except (KeyError,NameError):
+        return None
 
 
 class Location:
@@ -401,9 +389,14 @@ class Location:
     proto = user = host = port = path = archive = None
     ssh_re = re.compile(r'(?P<proto>ssh)://(?:(?P<user>[^@]+)@)?'
                         r'(?P<host>[^:/#]+)(?::(?P<port>\d+))?'
-                        r'(?P<path>[^:]+)(?:::(?P<archive>.+))?$')
-    file_re = re.compile(r'(?P<proto>file)://'
-                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?$')
+                        r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
+    if sys.platform.startswith('win'):                            
+        file_re = re.compile(r'(?P<proto>file)://'
+                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
+    else:
+        file_re = re.compile(r'(?P<proto>file)://'
+                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
+        
     scp_re = re.compile(r'((?:(?P<user>[^@]+)@)?(?P<host>[^:/]+):)?'
                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?$')
 

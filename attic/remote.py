@@ -1,5 +1,3 @@
-import errno
-import fcntl
 import msgpack
 import os
 import select
@@ -12,6 +10,9 @@ from .hashindex import NSIndex
 from .helpers import Error, IntegrityError
 from .repository import Repository
 
+if not sys.platform.startswith('win'):
+    import fcntl
+    
 BUFSIZE = 10 * 1024 * 1024
 
 
@@ -30,12 +31,13 @@ class RepositoryServer(object):
         self.restrict_to_paths = restrict_to_paths
 
     def serve(self):
-        # Make stdin non-blocking
-        fl = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
-        fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl | os.O_NONBLOCK)
-        # Make stdout blocking
-        fl = fcntl.fcntl(sys.stdout.fileno(), fcntl.F_GETFL)
-        fcntl.fcntl(sys.stdout.fileno(), fcntl.F_SETFL, fl & ~os.O_NONBLOCK)
+        if not sys.platform.startswith('win'):
+            # Make stdin non-blocking
+            fl = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
+            fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl | os.O_NONBLOCK)
+            # Make stdout blocking
+            fl = fcntl.fcntl(sys.stdout.fileno(), fcntl.F_GETFL)
+            fcntl.fcntl(sys.stdout.fileno(), fcntl.F_SETFL, fl & ~os.O_NONBLOCK)
         unpacker = msgpack.Unpacker(use_list=False)
         while True:
             r, w, es = select.select([sys.stdin], [], [], 10)
@@ -110,8 +112,9 @@ class RemoteRepository(object):
         self.p = Popen(args, bufsize=0, stdin=PIPE, stdout=PIPE)
         self.stdin_fd = self.p.stdin.fileno()
         self.stdout_fd = self.p.stdout.fileno()
-        fcntl.fcntl(self.stdin_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdin_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
-        fcntl.fcntl(self.stdout_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdout_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+        if not sys.platform.startswith('win'):
+            fcntl.fcntl(self.stdin_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdin_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+            fcntl.fcntl(self.stdout_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdout_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
         self.r_fds = [self.stdout_fd]
         self.x_fds = [self.stdin_fd, self.stdout_fd]
 

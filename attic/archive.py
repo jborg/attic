@@ -286,35 +286,36 @@ class Archive:
             raise Exception('Unknown archive item type %r' % item[b'mode'])
 
     def restore_attrs(self, path, item, symlink=False, fd=None):
-        xattrs = item.get(b'xattrs')
-        if xattrs:
-                for k, v in xattrs.items():
-                    try:
-                        xattr.setxattr(fd or path, k, v, follow_symlinks=False)
-                    except OSError as e:
-                        if e.errno != errno.ENOTSUP:
-                            raise
-        uid = gid = None
-        if not self.numeric_owner:
-            uid = user2uid(item[b'user'])
-            gid = group2gid(item[b'group'])
-        uid = item[b'uid'] if uid is None else uid
-        gid = item[b'gid'] if gid is None else gid
-        # This code is a bit of a mess due to os specific differences
-        try:
+        # Attributes in windows not implemented
+        if not sys.platform.startswith('win'):
+            xattrs = item.get(b'xattrs')
+            if xattrs:
+                    for k, v in xattrs.items():
+                        try:
+                            xattr.setxattr(fd or path, k, v)
+                        except OSError as e:
+                            if e.errno != errno.ENOTSUP:
+                                raise
+            uid = gid = None
+            if not self.numeric_owner:
+                uid = user2uid(item[b'user'])
+                gid = group2gid(item[b'group'])
+            uid = uid or item[b'uid']
+            gid = gid or item[b'gid']
+            # This code is a bit of a mess due to os specific differences
+            try:
+                if fd:
+                    os.fchown(fd, uid, gid)
+                else:
+                    os.lchown(path, uid, gid)
+            except OSError:
+                pass
             if fd:
-                os.fchown(fd, uid, gid)
-            else:
-                os.lchown(path, uid, gid)
-        except OSError:
-            pass
-        if fd:
-            os.fchmod(fd, item[b'mode'])
-        elif not symlink:
-            os.chmod(path, item[b'mode'])
-        elif has_lchmod:  # Not available on Linux
-            os.lchmod(path, item[b'mode'])
-        mtime = bigint_to_int(item[b'mtime'])
+                os.fchmod(fd, item[b'mode'])
+            elif not symlink:
+                os.chmod(path, item[b'mode'])
+            elif has_lchmod:  # Not available on Linux
+                os.lchmod(path, item[b'mode'])
         if fd and utime_supports_fd:  # Python >= 3.3
             os.utime(fd, None, ns=(mtime, mtime))
         elif utime_supports_follow_symlinks:  # Python >= 3.3
