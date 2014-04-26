@@ -7,11 +7,11 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 /* Windows build patch */
-#if !defined(WIN32) && !defined(MS_WINDOWS)
+#if defined(WIN32) || defined(MS_WINDOWS)
+#include "_mman-win32.h"
+#else
 #include <unistd.h>
 #include <sys/mman.h>
-#else 
-#include "_mman-win32.h"
 #endif
 
 
@@ -75,12 +75,16 @@ typedef struct {
 #define BUCKET_UPPER_LIMIT .90
 #define MIN_BUCKETS 1024
 #define MAX(x, y) ((x) > (y) ? (x): (y))
+#if defined(WIN32) || defined(MS_WINDOWS)
 #define BUCKET_ADDR(index, idx) ((int)index->buckets + (idx * index->bucket_size))
+#define BUCKET_MATCHES_KEY(index, idx, key) (memcmp(key, (void *)BUCKET_ADDR(index, idx), index->key_size) == 0)
+#else
+#define BUCKET_ADDR(index, idx) (index->buckets + (idx * index->bucket_size))
+#define BUCKET_MATCHES_KEY(index, idx, key) (memcmp(key, BUCKET_ADDR(index, idx), index->key_size) == 0)
+#endif
 
 #define BUCKET_IS_DELETED(index, idx) (*((uint32_t *)(BUCKET_ADDR(index, idx) + index->key_size)) == DELETED)
 #define BUCKET_IS_EMPTY(index, idx) (*((uint32_t *)(BUCKET_ADDR(index, idx) + index->key_size)) == EMPTY)
-
-#define BUCKET_MATCHES_KEY(index, idx, key) (memcmp(key, (void *)BUCKET_ADDR(index, idx), index->key_size) == 0)
 
 #define BUCKET_MARK_DELETED(index, idx) (*((uint32_t *)(BUCKET_ADDR(index, idx) + index->key_size)) = DELETED)
 #define BUCKET_MARK_EMPTY(index, idx) (*((uint32_t *)(BUCKET_ADDR(index, idx) + index->key_size)) = EMPTY)
@@ -121,7 +125,11 @@ hashindex_lookup(HashIndex *index, const void *key)
         }
         else if(BUCKET_MATCHES_KEY(index, idx, key)) {
             if (didx != -1 && !index->readonly) {
+#if defined(WIN32) || defined(MS_WINDOWS)
                 memcpy((void *)BUCKET_ADDR(index, didx), (void *)BUCKET_ADDR(index, idx), index->bucket_size);
+#else
+                memcpy(BUCKET_ADDR(index, didx), BUCKET_ADDR(index, idx), index->bucket_size);
+#endif
                 BUCKET_MARK_DELETED(index, idx);
                 idx = didx;
             }
@@ -139,7 +147,7 @@ hashindex_resize(HashIndex *index, int capacity)
 {
     char *new_path = malloc(strlen(index->path) + 5);
     int ret = 0;
-    HashIndex *new;    
+    HashIndex *new;   
     void *key = NULL;    
     strcpy(new_path, index->path);
     strcat(new_path, ".tmp");
@@ -221,7 +229,11 @@ hashindex_read(const char *path)
     index->key_size = header.key_size;
     index->value_size = header.value_size;
     index->bucket_size = index->key_size + index->value_size;
+#if defined(WIN32) || defined(MS_WINDOWS)
     index->buckets = (void *)((int)addr + sizeof(HashHeader));
+#else
+    index->buckets = (addr + sizeof(HashHeader));
+#endif
     index->lower_limit = index->num_buckets > MIN_BUCKETS ? ((int)(index->num_buckets * BUCKET_LOWER_LIMIT)) : 0;
     index->upper_limit = (int)(index->num_buckets * BUCKET_UPPER_LIMIT);
 fail:
@@ -236,6 +248,7 @@ hashindex_init(int capacity, int key_size, int value_size)
 {
     FILE *fd;
     //This must be C89 compatible to compile in windows
+#if defined(WIN32) || defined(MS_WINDOWS)
     char bucket[MAX_BUCKET_SIZE] = "";
     char tmp_magic[] = MAGIC;
     int i, bucket_size;
@@ -246,6 +259,15 @@ hashindex_init(int capacity, int key_size, int value_size)
     header.num_entries = 0;
     header.key_size = key_size; 
     header.value_size = value_size;
+#else
+    char bucket[MAX_BUCKET_SIZE] = {};
+    int i, bucket_size;
+    HashHeader header = {
+    .magic = MAGIC, .num_entries = 0, .key_size = key_size, .value_size = value_size
+    };
+    capacity = MAX(MIN_BUCKETS, capacity);
+    header.num_buckets = _htole32(capacity);
+#endif
     if(!(fd = fopen(path, "w"))) {
         EPRINTF_PATH(path, "fopen failed");
         return NULL;
@@ -284,8 +306,13 @@ hashindex_write(HashIndex *index, const char *path)
     if(index->readonly) {
         return 1;
     }
+#if defined(WIN32) || defined(MS_WINDOWS)
     *((uint32_t *)((int)index->map_addr + 8)) = _htole32(index->num_entries);
     *((uint32_t *)((int)index->map_addr + 12)) = _htole32(index->num_buckets);
+#else
+    *((uint32_t *)(index->map_addr + 8)) = _htole32(index->num_entries);
+    *((uint32_t *)(index->map_addr + 12)) = _htole32(index->num_buckets);
+#endif
     if(msync(index->map_addr, index->map_length, MS_SYNC) < 0) {
         EPRINTF("msync failed");
         return 0;
@@ -309,7 +336,11 @@ hashindex_get(HashIndex *index, const void *key)
     if(idx < 0) {
         return NULL;
     }
+#if defined(WIN32) || defined(MS_WINDOWS)
     return (void *)(BUCKET_ADDR(index, idx) + index->key_size);
+#else
+    return BUCKET_ADDR(index, idx) + index->key_size;
+#endif
 }
 
 static int
@@ -328,14 +359,22 @@ hashindex_set(HashIndex *index, const void *key, const void *value)
         while(!BUCKET_IS_EMPTY(index, idx) && !BUCKET_IS_DELETED(index, idx)) {
             idx = (idx + 1) % index->num_buckets;
         }
+#if defined(WIN32) || defined(MS_WINDOWS)
         ptr = (uint8_t *)BUCKET_ADDR(index, idx);
+#else
+        ptr = BUCKET_ADDR(index, idx);
+#endif
         memcpy(ptr, key, index->key_size);
         memcpy(ptr + index->key_size, value, index->value_size);
         index->num_entries += 1;
     }
     else
     {
+#if defined(WIN32) || defined(MS_WINDOWS)
         memcpy((void *)(BUCKET_ADDR(index, idx) + index->key_size), value, index->value_size);
+#else
+        memcpy(BUCKET_ADDR(index, idx) + index->key_size, value, index->value_size);
+#endif
     }
     return 1;
 }
@@ -362,7 +401,11 @@ hashindex_next_key(HashIndex *index, const void *key)
 {
     int idx = 0;
     if(key) {
+#if defined(WIN32) || defined(MS_WINDOWS)
         idx = 1 + ((int)key - (int)index->buckets) / index->bucket_size;
+#else
+       idx = 1 + (key - index->buckets) / index->bucket_size;
+#endif
     }
     if (idx == index->num_buckets) {
         return NULL;
@@ -373,7 +416,11 @@ hashindex_next_key(HashIndex *index, const void *key)
             return NULL;
         }
     }
+#if defined(WIN32) || defined(MS_WINDOWS)
     return (void *)BUCKET_ADDR(index, idx);
+#else
+    return BUCKET_ADDR(index, idx);
+#endif
 }
 
 static int
@@ -390,7 +437,11 @@ hashindex_summarize(HashIndex *index, long long *total_size, long long *total_cs
     void *key = NULL;
 
     while((key = hashindex_next_key(index, key))) {
+#if defined(WIN32) || defined(MS_WINDOWS)
         values = (int32_t *)((int)key + 32);
+#else
+        values = key + 32;	
+#endif
         unique_size += values[1];
         unique_csize += values[2];
         size += values[0] * values[1];
