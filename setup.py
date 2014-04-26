@@ -21,7 +21,9 @@ if sys.platform == 'win32':
     possible_openssl_prefixes_win32 = ['C:/OpenSSL-Win32/lib','C:/OpenSSL-Win32']
     libraries = ['libeay32','ssleay32']
     hashindex_source_win = 'attic/_mman-win32.c'
+    attic_script='scripts/attic.py'
 else: 
+    attic_script='scripts/attic'
     hashindex_source_win = ''
     libraries = ['crypto']
 try:
