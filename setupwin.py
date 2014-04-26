@@ -1,7 +1,6 @@
 # -*- encoding: utf-8 *-*
 import os
 import sys
-import platform
 from glob import glob
 
 import versioneer
@@ -28,16 +27,13 @@ platform_linux_source = 'attic/platform_linux.pyx'
     
 # Win32 hacks
 if sys.platform == 'win32':
-    possible_openssl_prefixes_win32 = ['C:/OpenSSL-Win64/lib','C:/OpenSSL-Win64','C:/OpenSSL-Win32/lib','C:/OpenSSL-Win32']
-    libraries = ['Advapi32', 'User32', 'Ole32', 'Oleaut32', 'Gdi32','libeay32','ssleay32']
+    possible_openssl_prefixes_win32 = ['C:/OpenSSL-Win32/lib','C:/OpenSSL-Win32']
+    libraries = ['libeay32','ssleay32']
     hashindex_source_win = 'attic/_mman-win32.c'
     attic_script='scripts/attic.py'
     import cx_Freeze
     cx_base = None
     build_dir='build/lib.'+sys.platform+'-'+sys.version[0:3]+'/attic/'
-    if platform.architecture()[0] == '64bit':
-        build_dir='build/lib.win-amd64-'+sys.version[0:3]+'/attic/'
-        #libraries += ['Advapi32', 'User32', 'Ole32', 'Oleaut32', 'Gdi32']
     # build_exe_options = {"packages": ["os","msgpack-python"], "excludes": ["tkinter"]}
     build_exe_options = {        
             'packages': ['os','msgpack'], 
@@ -46,8 +42,7 @@ if sys.platform == 'win32':
             'include_msvcr': True,
             'include_files': [
                 (build_dir,'attic'),
-                (attic_script,'attic.py'),
-                ("contrib/","contrib")
+                (attic_script,'attic.py')
             ],
             # 'path': sys.path + ['build/lib.win32-3.3/']
         }       
@@ -98,7 +93,7 @@ def detect_openssl(prefixes):
                     return prefix
 
 
-possible_openssl_prefixes = ['/usr', '/usr/local', '/usr/local/opt/openssl', '/usr/local/ssl', '/usr/local/openssl', '/usr/local/attic','/openssl','/openssl/lib'] + possible_openssl_prefixes_win32
+possible_openssl_prefixes = ['/usr', '/usr/local', '/usr/local/opt/openssl', '/usr/local/ssl', '/usr/local/openssl', '/usr/local/attic'] + possible_openssl_prefixes_win32
 if os.environ.get('ATTIC_OPENSSL_PREFIX'):
     possible_openssl_prefixes.insert(0, os.environ.get('ATTIC_OPENSSL_PREFIX'))
 ssl_prefix = detect_openssl(possible_openssl_prefixes)
@@ -125,41 +120,40 @@ else:
 if sys.platform == 'Linux':
     ext_modules.append(Extension('attic.platform_linux', [platform_linux_source], libraries=['acl']))
 
-if not 'bdist_msi' in sys.argv:
-    setup(
-        name='Attic',
-        version=versioneer.get_version(),
-        author='Jonas Borgström',
-        author_email='jonas@borgstrom.se',
-        url='https://attic-backup.org/',
-        description='Deduplicated backups',
-        long_description=long_description,
-        license='BSD',
-        platforms=['Linux', 'MacOS X', 'Win32','Win64'],
-        classifiers=[
-            'Development Status :: 4 - Beta',
-            'Environment :: Console',
-            'Intended Audience :: System Administrators',
-            'License :: OSI Approved :: BSD License',
-            'Operating System :: POSIX :: BSD :: FreeBSD',
-            'Operating System :: MacOS :: MacOS X',
-            'Operating System :: POSIX :: Linux',
-            'Programming Language :: Python',
-            'Topic :: Security :: Cryptography',
-            'Topic :: System :: Archiving :: Backup',
-        ],
-        packages=['attic', 'attic.testsuite'],
-        scripts=[attic_script],
-        cmdclass=cmdclass,
-        ext_modules=ext_modules
-        # install_requires=['msgpack-python']
-    )
+setup(
+    name='Attic',
+    version=versioneer.get_version(),
+    author='Jonas Borgström',
+    author_email='jonas@borgstrom.se',
+    url='https://attic-backup.org/',
+    description='Deduplicated backups',
+    long_description=long_description,
+    license='BSD',
+    platforms=['Linux', 'MacOS X', 'Win32'],
+    classifiers=[
+        'Development Status :: 4 - Beta',
+        'Environment :: Console',
+        'Intended Audience :: System Administrators',
+        'License :: OSI Approved :: BSD License',
+        'Operating System :: POSIX :: BSD :: FreeBSD',
+        'Operating System :: MacOS :: MacOS X',
+        'Operating System :: POSIX :: Linux',
+        'Programming Language :: Python',
+        'Topic :: Security :: Cryptography',
+        'Topic :: System :: Archiving :: Backup',
+    ],
+    packages=['attic', 'attic.testsuite'],
+    scripts=[attic_script],
+    cmdclass=cmdclass,
+    ext_modules=ext_modules,
+    install_requires=['msgpack-python']
+)
 
 if sys.platform == 'win32':
     print ("Creating EXE")
     cx_Freeze.setup(
         name='Attic',
-        version='0.0.2',
+        version=versioneer.get_version(),
         author='Jonas Borgström',
         author_email='jonas@borgstrom.se',
         url='https://attic-backup.org/',
@@ -184,5 +178,5 @@ if sys.platform == 'win32':
         # cmdclass=cmdclass,
         # install_requires=['msgpack-python'],
         options = {"build_exe": build_exe_options},
-        executables = [cx_Freeze.Executable("scripts/attic.py")]
+        executables = [cx_Freeze.Executable("attic.py")]
     )
