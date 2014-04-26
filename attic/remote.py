@@ -1,17 +1,20 @@
 import msgpack
 import os
-import select
+# import select
 import shutil
 from subprocess import Popen, PIPE
 import sys
 import tempfile
 
 from .hashindex import NSIndex
-from .helpers import Error, IntegrityError
+from .helpers import Error, IntegrityError, StdReader
 from .repository import Repository
 
 if not sys.platform.startswith('win'):
     import fcntl
+
+    
+
     
 BUFSIZE = 10 * 1024 * 1024
 
@@ -42,7 +45,7 @@ class RepositoryServer(object):
         while True:
             r, w, es = select.select([sys.stdin], [], [], 10)
             if r:
-                data = os.read(sys.stdin.fileno(), BUFSIZE)
+                data = os.read(sys.stdin.fileno(), BUFSIZE)                
                 if not data:
                     return
                 unpacker.feed(data)
@@ -117,7 +120,7 @@ class RemoteRepository(object):
             fcntl.fcntl(self.stdout_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdout_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
         self.r_fds = [self.stdout_fd]
         self.x_fds = [self.stdin_fd, self.stdout_fd]
-
+        self.t=StdReader(BUFSIZE)
         version = self.call('negotiate', 1)
         if version != 1:
             raise Exception('Server insisted on using unsupported protocol version %d' % version)
@@ -167,13 +170,16 @@ class RemoteRepository(object):
                             return
                 except KeyError:
                     break
-            r, w, x = select.select(self.r_fds, w_fds, self.x_fds, 1)
+            #In windows Iterate instead select ?       self.x_fds  
+            r, w, x = self.t.select(self.r_fds, w_fds, self.x_fds, 1)
+            #print (r,w,x)
             if x:
                 raise Exception('FD exception occured')
             if r:
-                data = os.read(self.stdout_fd, BUFSIZE)
+                data = self.t.read_t(self.stdout_fd, BUFSIZE)    
                 if not data:
                     raise ConnectionClosed()
+                print ("r",data)
                 self.unpacker.feed(data)
                 for type, msgid, error, res in self.unpacker:
                     if msgid in self.ignore_responses:
@@ -198,18 +204,14 @@ class RemoteRepository(object):
                         args = (self.preload_ids.pop(0),)
                         self.msgid += 1
                         self.cache.setdefault(args, []).append(self.msgid)
-                        self.to_send = msgpack.packb((1, self.msgid, cmd, args))
+                        self.to_send = msgpack.packb((1, self.msgid, cmd, args))                    
 
                 if self.to_send:
-                    try:
-                        self.to_send = self.to_send[os.write(self.stdin_fd, self.to_send):]
-                    except OSError as e:
-                        # io.write might raise EAGAIN even though select indicates
-                        # that the fd should be writable
-                        if e.errno != errno.EAGAIN:
-                            raise
+                    print ("w",cmd,args)
+                    self.to_send = self.to_send[os.write(self.stdin_fd, self.to_send):]
                 if not self.to_send and not (calls or self.preload_ids):
                     w_fds = []
+                
         self.ignore_responses |= set(waiting_for)
 
     def check(self, repair=False):

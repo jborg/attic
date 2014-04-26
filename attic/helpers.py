@@ -6,15 +6,20 @@ import re
 import stat
 import sys
 import time
+import select
 from datetime import datetime, timezone, timedelta
 from fnmatch import translate
 from operator import attrgetter
 
 
-if not sys.platform.startswith('win'):
+if sys.platform.startswith('win'):
+    import threading,signal
+    from queue import Queue
+else:
     import grp
     import pwd
     import fcntl
+   
     
 import attic.hashindex
 import attic.chunker
@@ -49,8 +54,7 @@ class UpgradableLock:
         except IOError:
             self.fd = open(path, 'r')
         if sys.platform.startswith('win'):
-            #Open is always exclusive in win, posible implementation:
-            #   http://code.activestate.com/recipes/578453-python-single-instance-cross-platform/
+            #Open is always exclusive in win
             self.is_exclusive = True
         else:
             if exclusive:
@@ -542,21 +546,59 @@ else:
 
     unhexlify = binascii.unhexlify
 
+    
+class StdReader():
+    """Implementes Non blocking readads compatible with windows"""
 
-def bigint_to_int(mtime):
-    """Convert bytearray to int
-    """
-    if isinstance(mtime, bytes):
-        return int.from_bytes(mtime, 'little', signed=True)
-    return mtime
-
-
-def int_to_bigint(value):
-    """Convert integers larger than 64 bits to bytearray
-
-    Smaller integers are left alone
-    """
-    if value.bit_length() > 63:
-        return value.to_bytes((value.bit_length() + 9) // 8, 'little', signed=True)
-    return value
-
+    def worker_t(self):
+      #print ("Hilo")
+      try:
+        data=os.read(self.fd, self.BUFSIZE)
+        #print (self.BUFSIZE,data)
+        self.q.put(data)
+      except Exception as e:
+        self.err=True
+        #print("worker_t error:",e)
+    
+    def __init__(self,BUFSIZE=4096):
+        if sys.platform.startswith('win'):
+            self.q=Queue()
+            #signal.signal(signal.SIGABRT,worker_t)
+            self.t=threading.Thread(target=self.worker_t)        
+            self.BUFSIZE=BUFSIZE
+            self.err=False
+            
+    def read_t(self,stdout_fd, BUFSIZE):
+        if sys.platform.startswith('win'):
+            try:
+                data=self.q.get_nowait()
+                self.q.task_done()
+                return data
+            except Exception as e:
+                print ("read_t",e)
+                pass
+        else:
+            return os.read(stdout_fd, BUFSIZE)
+    def select(self,r,w,x,timeout):
+        if sys.platform.startswith('win'):
+            ret_r=[]
+            ret_w=w
+            ret_x=[]
+            if len(r) > 0:
+                if not self.t.isAlive():
+                    #print ("t start") 
+                    self.fd = r[0]
+                    self.q=Queue()
+                    self.t=threading.Thread(target=self.worker_t)
+                    self.err=False
+                    self.t.start()            
+                self.t.join(timeout)
+            if not self.q.empty():
+                ret_r=r
+            if self.err==True:
+                ret_x=r
+            return ret_r,ret_w,ret_x
+        else:
+            return select.select(r,w,x,timeout)
+      
+            

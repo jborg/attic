@@ -21,7 +21,9 @@ if sys.platform == 'win32':
     possible_openssl_prefixes_win32 = ['C:/OpenSSL-Win32/lib','C:/OpenSSL-Win32']
     libraries = ['libeay32','ssleay32']
     hashindex_source_win = 'attic/_mman-win32.c'
+    attic_script='scripts/attic.py'
 else: 
+    attic_script='scripts/attic'
     hashindex_source_win = ''
     libraries = ['crypto']
 try:
@@ -124,7 +126,7 @@ setup(
         'Topic :: System :: Archiving :: Backup',
     ],
     packages=['attic', 'attic.testsuite'],
-    scripts=['scripts/attic'],
+    scripts=[attic_script],
     cmdclass=cmdclass,
     ext_modules=[
         Extension('attic.crypto', [crypto_source], libraries=libraries, include_dirs=include_dirs, library_dirs=library_dirs),
