@@ -22,7 +22,8 @@ if sys.platform == 'win32':
     libraries = ['libeay32','ssleay32']
     hashindex_source_win = 'attic/_mman-win32.c'
     attic_script='scripts/attic.py'
-else: 
+else:
+    possible_openssl_prefixes_win32 = []
     attic_script='scripts/attic'
     hashindex_source_win = ''
     libraries = ['crypto']
@@ -48,7 +49,10 @@ try:
             versioneer.cmd_sdist.__init__(self, *args, **kwargs)
 
         def make_distribution(self):
-            self.filelist.extend([hashindex_source_win]+['attic/crypto.c', 'attic/chunker.c', 'attic/_chunker.c', 'attic/hashindex.c', 'attic/_hashindex.c'])
+            if sys.platform == 'win32':
+               self.filelist.extend([hashindex_source_win]+['attic/crypto.c', 'attic/chunker.c', 'attic/_chunker.c', 'attic/hashindex.c', 'attic/_hashindex.c'])
+            else:
+               self.filelist.extend(['attic/crypto.c', 'attic/chunker.c', 'attic/_chunker.c', 'attic/hashindex.c', 'attic/_hashindex.c'])
             super(Sdist, self).make_distribution()
 
 except ImportError:
@@ -59,6 +63,7 @@ except ImportError:
     crypto_source = crypto_source.replace('.pyx', '.c')
     chunker_source = chunker_source.replace('.pyx', '.c')
     hashindex_source = hashindex_source.replace('.pyx', '.c')
+    acl_source = platform_linux_source.replace('.pyx', '.c')
     from distutils.command.build_ext import build_ext
     if not all(os.path.exists(path) for path in [crypto_source, chunker_source, hashindex_source, acl_source]):
         raise ImportError('The GIT version of Attic needs Cython. Install Cython or use a released version')
@@ -126,10 +131,6 @@ setup(
     packages=['attic', 'attic.testsuite'],
     scripts=[attic_script],
     cmdclass=cmdclass,
-    ext_modules=[
-        Extension('attic.crypto', [crypto_source], libraries=libraries, include_dirs=include_dirs, library_dirs=library_dirs),
-        Extension('attic.chunker', [chunker_source]),
-        Extension('attic.hashindex', [hashindex_source]+[hashindex_source_win])
-    ],
+    ext_modules=ext_modules,
     install_requires=['msgpack-python']
 )
