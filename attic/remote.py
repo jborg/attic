@@ -1,6 +1,6 @@
 import msgpack
 import os
-# import select
+import select
 import shutil
 from subprocess import Popen, PIPE
 import sys
