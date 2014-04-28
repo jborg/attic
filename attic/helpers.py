@@ -468,6 +468,35 @@ def location_validator(archive=None):
         return loc
     return validator
 
+def ssh_command_validator(args):
+    def parse_command(c,sep):
+        c_list=c.split(sep)
+        tmplist=[]
+        next_str=False
+        # print("bucle")
+        for elem in c_list:
+            # print (elem)
+            if elem == '':                    
+               next_str=True
+               continue
+            if next_str:
+               tmplist.append(elem)
+            else:
+               tmplist+=elem.strip().split(" ")
+            next_str=False 
+        return tmplist
+    c=args.ssh_command.replace("\\ ","__spaces__")
+    c_list=[c]
+    # print(c_list)
+    c_list=parse_command(c,"'")
+    if len(c_list) < 2:
+        c_list=parse_command(c,'"')
+    # print(c_list)
+    c_list=[w.replace("__spaces__","\\ ") for w in c_list]
+    if hasattr(args, 'repository'):
+      args.repository.ssh_command=c_list
+    if hasattr(args, 'archive'):
+      args.archive.ssh_command=c_list
 
 def read_msgpack(filename):
     with open(filename, 'rb') as fd:
