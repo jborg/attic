@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import os
-import sys
 
 API_VERSION = 2
 
@@ -119,10 +118,7 @@ cdef class NSIndex(IndexBase):
             key = hashindex_get(self.index, <char *>marker)
             if marker is None:
                 raise IndexError
-            if sys.platform.startswith('win'):
-                iter.key = <void *>(<int>key - 32)
-            else:
-                iter.key = key - 32
+            iter.key = <void *>(<int>key - 32)
         return iter
 
 
@@ -179,10 +175,7 @@ cdef class ChunkIndex(IndexBase):
             key = hashindex_get(self.index, <char *>marker)
             if marker is None:
                 raise IndexError
-            if sys.platform.startswith('win'):
-               iter.key = <void *>(<int>key - 32)
-            else:
-               iter.key = key - 32
+            iter.key = <void *>(<int>key - 32)
         return iter
 
     def summarize(self):

@@ -487,16 +487,16 @@ def ssh_command_validator(args):
         return tmplist
     c=args.ssh_command.replace("\\ ","__spaces__")
     c_list=[c]
+    # print(c_list)
     c_list=parse_command(c,"'")
     if len(c_list) < 2:
         c_list=parse_command(c,'"')
+    # print(c_list)
     c_list=[w.replace("__spaces__","\\ ") for w in c_list]
     if hasattr(args, 'repository'):
       args.repository.ssh_command=c_list
     if hasattr(args, 'archive'):
       args.archive.ssh_command=c_list
-    if hasattr(args, 'src'):
-      args.src.ssh_command=c_list      
 
 def read_msgpack(filename):
     with open(filename, 'rb') as fd:
