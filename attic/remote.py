@@ -180,7 +180,7 @@ class RemoteRepository(object):
                 data = self.t.read_t(self.stdout_fd, BUFSIZE)    
                 if not data:
                     raise ConnectionClosed()
-                print ("r",data)
+                # print ("r",data)
                 self.unpacker.feed(data)
                 for type, msgid, error, res in self.unpacker:
                     if msgid in self.ignore_responses:
@@ -208,7 +208,7 @@ class RemoteRepository(object):
                         self.to_send = msgpack.packb((1, self.msgid, cmd, args))                    
 
                 if self.to_send:
-                    print ("w",cmd,args)
+                    #print ("w",cmd,args)
                     self.to_send = self.to_send[os.write(self.stdin_fd, self.to_send):]
                 if not self.to_send and not (calls or self.preload_ids):
                     w_fds = []

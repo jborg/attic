@@ -42,7 +42,8 @@ if sys.platform == 'win32':
             'include_msvcr': True,
             'include_files': [
                 (build_dir,'attic'),
-                (attic_script,'attic.py')
+                (attic_script,'attic.py'),
+                ("contrib/","contrib")
             ],
             # 'path': sys.path + ['build/lib.win32-3.3/']
         }       
@@ -120,40 +121,41 @@ else:
 if sys.platform == 'Linux':
     ext_modules.append(Extension('attic.platform_linux', [platform_linux_source], libraries=['acl']))
 
-setup(
-    name='Attic',
-    version=versioneer.get_version(),
-    author='Jonas Borgström',
-    author_email='jonas@borgstrom.se',
-    url='https://attic-backup.org/',
-    description='Deduplicated backups',
-    long_description=long_description,
-    license='BSD',
-    platforms=['Linux', 'MacOS X', 'Win32'],
-    classifiers=[
-        'Development Status :: 4 - Beta',
-        'Environment :: Console',
-        'Intended Audience :: System Administrators',
-        'License :: OSI Approved :: BSD License',
-        'Operating System :: POSIX :: BSD :: FreeBSD',
-        'Operating System :: MacOS :: MacOS X',
-        'Operating System :: POSIX :: Linux',
-        'Programming Language :: Python',
-        'Topic :: Security :: Cryptography',
-        'Topic :: System :: Archiving :: Backup',
-    ],
-    packages=['attic', 'attic.testsuite'],
-    scripts=[attic_script],
-    cmdclass=cmdclass,
-    ext_modules=ext_modules,
-    install_requires=['msgpack-python']
-)
+if not 'bdist_msi' in sys.argv:
+    setup(
+        name='Attic',
+        version=versioneer.get_version(),
+        author='Jonas Borgström',
+        author_email='jonas@borgstrom.se',
+        url='https://attic-backup.org/',
+        description='Deduplicated backups',
+        long_description=long_description,
+        license='BSD',
+        platforms=['Linux', 'MacOS X', 'Win32'],
+        classifiers=[
+            'Development Status :: 4 - Beta',
+            'Environment :: Console',
+            'Intended Audience :: System Administrators',
+            'License :: OSI Approved :: BSD License',
+            'Operating System :: POSIX :: BSD :: FreeBSD',
+            'Operating System :: MacOS :: MacOS X',
+            'Operating System :: POSIX :: Linux',
+            'Programming Language :: Python',
+            'Topic :: Security :: Cryptography',
+            'Topic :: System :: Archiving :: Backup',
+        ],
+        packages=['attic', 'attic.testsuite'],
+        scripts=[attic_script],
+        cmdclass=cmdclass,
+        ext_modules=ext_modules
+        # install_requires=['msgpack-python']
+    )
 
 if sys.platform == 'win32':
     print ("Creating EXE")
     cx_Freeze.setup(
         name='Attic',
-        version=versioneer.get_version(),
+        # version=versioneer.get_version(),
         author='Jonas Borgström',
         author_email='jonas@borgstrom.se',
         url='https://attic-backup.org/',
