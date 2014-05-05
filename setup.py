@@ -18,8 +18,8 @@ if sys.version_info < min_python:
 
 # Win32 hacks
 if sys.platform == 'win32':
-    possible_openssl_prefixes_win32 = ['C:/OpenSSL-Win32/lib','C:/OpenSSL-Win32']
-    libraries = ['libeay32','ssleay32']
+    possible_openssl_prefixes_win32 = ['C:/OpenSSL-Win64/lib','C:/OpenSSL-Win64','C:/OpenSSL-Win32/lib','C:/OpenSSL-Win32']
+    libraries = ['Advapi32', 'User32', 'Ole32', 'Oleaut32', 'Gdi32','libeay32','ssleay32']
     hashindex_source_win = 'attic/_mman-win32.c'
     attic_script='scripts/attic.py'
 else:
