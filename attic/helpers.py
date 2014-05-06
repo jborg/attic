@@ -7,6 +7,7 @@ import stat
 import sys
 import time
 import select
+import psutil
 from datetime import datetime, timezone, timedelta
 from fnmatch import translate
 from operator import attrgetter
@@ -14,7 +15,7 @@ from operator import attrgetter
 
 if sys.platform.startswith('win'):
     import threading,signal
-    from queue import Queue
+    import queue
 else:
     import grp
     import pwd
@@ -395,7 +396,7 @@ class Location:
                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
     if sys.platform.startswith('win'):                            
         file_re = re.compile(r'(?P<proto>file)://'
-                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
+                         r'(?P<path>[\w]:[^:]+|[^:]+)(?:::(?P<archive>.+))?')
     else:
         file_re = re.compile(r'(?P<proto>file)://'
                          r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
@@ -576,27 +577,95 @@ else:
     unhexlify = binascii.unhexlify
 
     
-class StdReader():
+class StdAsyncIOt():
     """Implementes Non blocking readads compatible with windows"""
 
-    def worker_t(self):
+    def _worker_reader_t(self):
       #print ("Hilo")
-      try:
-        data=os.read(self.fd, self.BUFSIZE)
-        #print (self.BUFSIZE,data)
-        self.q.put(data)
-      except Exception as e:
-        self.err=True
-        #print("worker_t error:",e)
-    
-    def __init__(self,BUFSIZE=4096):
+      while self.run and not self.err:
+        try:
+          data=os.read(self.fd, self.BUFSIZE)
+          #print (self.BUFSIZE,data)
+          #if data == '' and self.process.poll() != None: raise "Null Data Readed"
+        except Exception as e:
+          self.err=True
+          # self.run=
+          print("worker_reader_t error os.read:",e)
+        try:
+          self.q.put(data)
+        except Exception as e:
+          self.err=True
+          # self.run=False
+          print("worker_reader_t queue error:",e)
+      # print ("worker_reader_t finish")
+
+    def _worker_writer_t(self):
+      #print ("Hilo")
+      while not self.err and (not self.q.empty() or self.run):
+        try:
+          try:
+            data=self.q.get(timeout=1)
+          except:
+            continue
+          data=os.write(self.fd, data)
+          # print ("Size:",self.q.qsize())
+          self.q.task_done()
+          # print ("Write Done")
+          #print (self.BUFSIZE,data)
+          #if data == '' and self.process.poll() != None: raise "Null Data Readed"
+        except Exception as e:
+          self.err=True
+          # self.run=False
+          print("worker_writer_t error:",e)
+      # print ("worker_writer_t finish")        
+          
+    def __init__(self,mode='read',SIZE=8192):
+        self.run=False
         if sys.platform.startswith('win'):
-            self.q=Queue()
-            #signal.signal(signal.SIGABRT,worker_t)
-            self.t=threading.Thread(target=self.worker_t)        
-            self.BUFSIZE=BUFSIZE
+            # print ("New Async Thread")
+            self.BUFSIZE=SIZE
+            self.MAXSIZE=SIZE
+            if mode == 'read':
+                self.MAXSIZE=0
+            self.q=queue.Queue(self.MAXSIZE)
             self.err=False
-            
+            # self.fd=r
+            # self.run=True
+            # self.t=threading.Thread(target=self.worker_t)               
+            # self.t.start()
+            self.mode=mode
+            if mode == 'read':
+                self.t=threading.Thread(target=self._worker_reader_t)
+            else:
+                self.t=threading.Thread(target=self._worker_writer_t)
+          
+
+    def start(self,fd):
+        if not self.t.isAlive() and not self.err:
+            # print ("r start") 
+            self.fd = fd
+            # self.q=Queue()       
+            # self.err=False
+            self.run=True
+            self.t.start()       
+        
+    def stop(self):       
+        self.run=False
+        # print ("stopping",self.mode)
+        if self.mode == 'write':
+            self.t.join()
+        
+    def is_read(self):
+        return not self.q.empty()
+        
+    def is_write(self):
+        if self.MAXSIZE == 0:
+            return True
+        if self.q.qsize() < self.MAXSIZE-1:
+            return True
+        print ("MAXSIZE")
+        return False
+        
     def read_t(self,stdout_fd, BUFSIZE):
         if sys.platform.startswith('win'):
             try:
@@ -605,29 +674,75 @@ class StdReader():
                 return data
             except Exception as e:
                 print ("read_t",e)
+                #self.run=False
                 pass
         else:
             return os.read(stdout_fd, BUFSIZE)
+
+    def write_t(self,stdin_fd,data):
+        if sys.platform.startswith('win'):
+            try:
+                self.q.put_nowait(data)
+                # self.q.task_done()
+                return len(data)
+            except Exception as e:
+                print ("write_t",e)
+                #self.run=False
+                pass
+        else:
+            return os.write(stdin_fd, data)
+
+class StdAsyncIO:
+    def __init__(self,BUFSIZE=10*1024*1024):
+        self.BUFSIZE=BUFSIZE
+        self.std_list=dict()
+    
+    def stop(self):
+        for key,elem in self.std_list.items():
+            elem.stop()
+            
     def select(self,r,w,x,timeout):
         if sys.platform.startswith('win'):
             ret_r=[]
-            ret_w=w
+            ret_w=[]
             ret_x=[]
-            if len(r) > 0:
-                if not self.t.isAlive():
-                    #print ("t start") 
-                    self.fd = r[0]
-                    self.q=Queue()
-                    self.t=threading.Thread(target=self.worker_t)
-                    self.err=False
-                    self.t.start()            
-                self.t.join(timeout)
-            if not self.q.empty():
-                ret_r=r
-            if self.err==True:
-                ret_x=r
+            wait=False
+            for elem in r:
+                if elem in self.std_list:
+                    if  self.std_list[elem].err:
+                        ret_x.append(elem)
+                    elif self.std_list[elem].is_read():
+                        ret_r.append(elem)
+                    else:
+                        self.std_list[elem].start(elem)
+                        wait=self.std_list[elem].t
+                        # self.std_list[elem].t.join(timeout) 
+                else:
+                    self.std_list[elem]=StdAsyncIOt('read',self.BUFSIZE)
+                    self.std_list[elem].start(elem)
+                    wait=self.std_list[elem].t
+                # self.std_list[elem].t.join(timeout) 
+            for elem in w:
+                if elem in self.std_list:
+                    if  self.std_list[elem].err:
+                        ret_x.append(elem)
+                    elif self.std_list[elem].is_write():
+                        ret_w.append(elem)
+                    else:
+                        self.std_list[elem].start(elem)
+                else:
+                    qsize=int(psutil.phymem_usage()[1])/96000 #probar 128000
+                    #qsize=8192
+                    self.std_list[elem]=StdAsyncIOt('write',qsize)
+                    self.std_list[elem].start(elem)
+            if len(ret_w) <1 and len(ret_x) <1 and wait:
+                wait.join(timeout)
             return ret_r,ret_w,ret_x
         else:
             return select.select(r,w,x,timeout)
       
-            
+    def read_t(self,stdout_fd, BUFSIZE):
+        return self.std_list[stdout_fd].read_t(stdout_fd, BUFSIZE)
+    def write_t(self,stdin_fd,data):
+        return self.std_list[stdin_fd].write_t(stdin_fd,data)
+        
