@@ -7,10 +7,12 @@ import sys
 import tempfile
 
 from .hashindex import NSIndex
-from .helpers import Error, IntegrityError, StdReader
+from .helpers import Error, IntegrityError, StdAsyncIO
 from .repository import Repository
 
-if not sys.platform.startswith('win'):
+if sys.platform.startswith('win'):
+    import msvcrt
+else:
     import fcntl
 
     
@@ -116,12 +118,15 @@ class RemoteRepository(object):
         self.p = Popen(args, bufsize=0, stdin=PIPE, stdout=PIPE)
         self.stdin_fd = self.p.stdin.fileno()
         self.stdout_fd = self.p.stdout.fileno()
-        if not sys.platform.startswith('win'):
+        if sys.platform.startswith('win'):
+            msvcrt.setmode(self.stdin_fd, os.O_BINARY)
+            msvcrt.setmode(self.stdout_fd, os.O_BINARY)
+        else:
             fcntl.fcntl(self.stdin_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdin_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
             fcntl.fcntl(self.stdout_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdout_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
         self.r_fds = [self.stdout_fd]
         self.x_fds = [self.stdin_fd, self.stdout_fd]
-        self.t=StdReader(BUFSIZE)
+        self.t=StdAsyncIO(BUFSIZE)
         version = self.call('negotiate', 1)
         if version != 1:
             raise Exception('Server insisted on using unsupported protocol version %d' % version)
@@ -173,7 +178,7 @@ class RemoteRepository(object):
                     break
             #In windows Iterate instead select ?       self.x_fds  
             r, w, x = self.t.select(self.r_fds, w_fds, self.x_fds, 1)
-            #print (r,w,x)
+            # print (r,w,x)
             if x:
                 raise Exception('FD exception occured')
             if r:
@@ -208,8 +213,9 @@ class RemoteRepository(object):
                         self.to_send = msgpack.packb((1, self.msgid, cmd, args))                    
 
                 if self.to_send:
-                    #print ("w",cmd,args)
-                    self.to_send = self.to_send[os.write(self.stdin_fd, self.to_send):]
+                    # print ("written:",len(self.to_send))
+                    self.to_send = self.to_send[self.t.write_t(self.stdin_fd, self.to_send):]
+                    # print ("no blocked")
                 if not self.to_send and not (calls or self.preload_ids):
                     w_fds = []
                 
