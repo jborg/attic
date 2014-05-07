@@ -1,6 +1,5 @@
 import msgpack
 import os
-import select
 import shutil
 from subprocess import Popen, PIPE
 import sys
@@ -36,18 +35,16 @@ class RepositoryServer(object):
         self.restrict_to_paths = restrict_to_paths
 
     def serve(self):
-        if not sys.platform.startswith('win'):
-            # Make stdin non-blocking
-            fl = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
-            fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl | os.O_NONBLOCK)
-            # Make stdout blocking
-            fl = fcntl.fcntl(sys.stdout.fileno(), fcntl.F_GETFL)
-            fcntl.fcntl(sys.stdout.fileno(), fcntl.F_SETFL, fl & ~os.O_NONBLOCK)
+        self.t=StdAsyncIO(BUFSIZE)
+        # Make stdin non-blocking
+        self.t.make_nonblocking(sys.stdin.fileno())
+        # Make stdout blocking
+        self.t.make_blocking(sys.stdout.fileno())
         unpacker = msgpack.Unpacker(use_list=False)
         while True:
             r, w, es = self.t.select([sys.stdin], [], [], 10)
             if r:
-                data = os.read(sys.stdin.fileno(), BUFSIZE)                
+                data = self.t.read_t(sys.stdin.fileno(), BUFSIZE)                
                 if not data:
                     return
                 unpacker.feed(data)
@@ -118,15 +115,12 @@ class RemoteRepository(object):
         self.p = Popen(args, bufsize=0, stdin=PIPE, stdout=PIPE)
         self.stdin_fd = self.p.stdin.fileno()
         self.stdout_fd = self.p.stdout.fileno()
-        if sys.platform.startswith('win'):
-            msvcrt.setmode(self.stdin_fd, os.O_BINARY)
-            msvcrt.setmode(self.stdout_fd, os.O_BINARY)
-        else:
-            fcntl.fcntl(self.stdin_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdin_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
-            fcntl.fcntl(self.stdout_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdout_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+        self.t=StdAsyncIO(BUFSIZE)
+        self.t.make_nonblocking(self.stdin_fd)
+        self.t.make_nonblocking(self.stdout_fd)
         self.r_fds = [self.stdout_fd]
         self.x_fds = [self.stdin_fd, self.stdout_fd]
-        self.t=StdAsyncIO(BUFSIZE)
+
         version = self.call('negotiate', 1)
         if version != 1:
             raise Exception('Server insisted on using unsupported protocol version %d' % version)
