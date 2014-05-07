@@ -8,6 +8,7 @@ import sys
 import time
 import select
 import psutil
+import portalocker
 from datetime import datetime, timezone, timedelta
 from fnmatch import translate
 from operator import attrgetter
@@ -18,14 +19,13 @@ if sys.platform.startswith('win'):
     import queue
 else:
     import grp
-    import pwd
+    import pwd   
     import fcntl
    
     
 import attic.hashindex
 import attic.chunker
 import attic.crypto
-
 
 class Error(Exception):
     """Error base class"""
@@ -54,27 +54,26 @@ class UpgradableLock:
             self.fd = open(path, 'r+')
         except IOError:
             self.fd = open(path, 'r')
-        if sys.platform.startswith('win'):
-            #Open is always exclusive in win
-            self.is_exclusive = True
+        if exclusive:
+            portalocker.lock(self.fd,portalocker.LOCK_EX)
         else:
-            if exclusive:
-                fcntl.lockf(self.fd, fcntl.LOCK_EX)
-            else:
-                fcntl.lockf(self.fd, fcntl.LOCK_SH)
-            self.is_exclusive = exclusive
+            portalocker.lock(self.fd,portalocker.LOCK_SH)
+        self.is_exclusive = exclusive
 
     def upgrade(self):
-        if not sys.platform.startswith('win'):
-            try:
-                fcntl.lockf(self.fd, fcntl.LOCK_EX)
-            except OSError as e:
-                raise self.LockUpgradeFailed(self.path)
-            self.is_exclusive = True
+        print ("lock upgrade")
+        try:
+            if sys.platform.startswith('win'):
+                portalocker.unlock(self.fd)
+            portalocker.lock(self.fd,portalocker.LOCK_EX)
+        except OSError as e:
+            raise self.LockUpgradeFailed(self.path)
+        self.is_exclusive = True
+        print ("upgraded")
 
     def release(self):
-        if not sys.platform.startswith('win'):
-            fcntl.lockf(self.fd, fcntl.LOCK_UN)
+        print ("unlocking")
+        portalocker.unlock(self.fd)
         self.fd.close()
 
 
@@ -489,16 +488,16 @@ def ssh_command_validator(args):
         return tmplist
     c=args.ssh_command.replace("\\ ","__spaces__")
     c_list=[c]
-    # print(c_list)
     c_list=parse_command(c,"'")
     if len(c_list) < 2:
         c_list=parse_command(c,'"')
-    # print(c_list)
     c_list=[w.replace("__spaces__","\\ ") for w in c_list]
     if hasattr(args, 'repository'):
       args.repository.ssh_command=c_list
     if hasattr(args, 'archive'):
       args.archive.ssh_command=c_list
+    if hasattr(args, 'src'):
+      args.src.ssh_command=c_list      
 
 def read_msgpack(filename):
     with open(filename, 'rb') as fd:
@@ -747,3 +746,10 @@ class StdAsyncIO:
     def write_t(self,stdin_fd,data):
         return self.std_list[stdin_fd].write_t(stdin_fd,data)
         
+    def make_nonblocking(self,std):
+        if not sys.platform.startswith('win'):
+            fcntl.fcntl(std, fcntl.F_SETFL, fcntl.fcntl(std, fcntl.F_GETFL) | os.O_NONBLOCK)
+    
+    def make_blocking(self,std):
+        if not sys.platform.startswith('win'):
+            fcntl.fcntl(std, fcntl.F_SETFL, fcntl.fcntl(std, fcntl.F_GETFL) & ~os.O_NONBLOCK)
