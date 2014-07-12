@@ -20,7 +20,7 @@ cdef extern from "sys/acl.h":
     char *acl_to_text(acl_t acl, ssize_t *len)
 
 cdef extern from "acl/libacl.h":
-    int acl_extended_file_nofollow(const char *path)
+    int acl_extended_file(const char *path)
 
 
 _comment_re = re.compile(' *#.*', re.M)
@@ -85,7 +85,7 @@ def acl_get(path, item, numeric_owner=False):
     cdef char *default_text = NULL
     cdef char *access_text = NULL
 
-    if acl_extended_file_nofollow(<bytes>os.fsencode(path)) <= 0:
+    if os.path.islink(path) or acl_extended_file(<bytes>os.fsencode(path)) <= 0:
         return
     if numeric_owner:
         converter = acl_numeric_ids
