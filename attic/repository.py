@@ -11,6 +11,7 @@ from zlib import crc32
 from .hashindex import NSIndex
 from .helpers import Error, IntegrityError, read_msgpack, write_msgpack, unhexlify, UpgradableLock
 from .lrucache import LRUCache
+from .platform import walk_path
 
 MAX_OBJECT_SIZE = 20 * 1024 * 1024
 MAGIC = b'ATTICSEG'
@@ -405,7 +406,7 @@ class LoggedIO(object):
         self.fds = None  # Just to make sure we're disabled
 
     def segment_iterator(self, reverse=False):
-        for dirpath, dirs, filenames in os.walk(os.path.join(self.path, 'data')):
+        for dirpath, dirs, filenames in walk_path(os.path.join(self.path, 'data')):
             dirs.sort(key=int, reverse=reverse)
             filenames = sorted((filename for filename in filenames if filename.isdigit()), key=int, reverse=reverse)
             for filename in filenames:

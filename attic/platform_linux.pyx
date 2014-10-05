@@ -23,6 +23,21 @@ cdef extern from "sys/acl.h":
 cdef extern from "acl/libacl.h":
     int acl_extended_file(const char *path)
 
+cdef extern from "dirent.h":
+    cdef struct dirent:
+        unsigned char d_type
+        char d_name[256]
+    ctypedef struct DIR:
+        pass
+
+    DIR* opendir(const char *name)
+    int readdir_r(DIR *dirp, dirent *entry, dirent **result)
+    int closedir(DIR *dirp)
+
+    int DT_UNKNOWN
+    int DT_DIR
+
+cimport libc.errno as errno
 
 _comment_re = re.compile(' *#.*', re.M)
 
@@ -138,3 +153,37 @@ def acl_set(path, item, numeric_owner=False):
                 acl_set_file(<bytes>os.fsencode(path), ACL_TYPE_DEFAULT, default_acl)
         finally:
             acl_free(default_acl)
+
+def _raise_os_error(errno_, filename=None):
+    raise OSError(errno_, os.strerror(errno_), filename)
+
+def listdir_by_type(path):
+    dirs, nondirs, unknowns = [], [], []
+    cdef DIR* dirp = opendir(os.fsencode(path))
+    cdef int rc
+    cdef dirent ent
+    cdef dirent* res
+    if dirp == NULL:
+        _raise_os_error(errno.errno, path)
+    try:
+        while True:
+            rc = readdir_r(dirp, &ent, &res)
+            if rc != 0:
+                _raise_os_error(rc, path)
+            if res == NULL:
+                break
+            if ent.d_name in (b'.', b'..'):
+                continue
+            name = os.fsdecode(ent.d_name)
+            if ent.d_type == DT_UNKNOWN:
+                # This may happen for certain filesystems.  Per readdir_r()
+                # docs, it won't happen for ext2,3,4 or btrfs.  Experimentally,
+                # it also doesn't happen for ntfs.
+                unknowns.append(name)
+            elif ent.d_type == DT_DIR:
+                dirs.append(name)
+            else:
+                nondirs.append(name)
+    finally:
+        closedir(dirp)
+    return dirs, nondirs, unknowns
