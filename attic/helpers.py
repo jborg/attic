@@ -5,7 +5,6 @@ import msgpack
 import os
 import pwd
 import re
-import stat
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -28,7 +27,7 @@ class Error(Exception):
 
 
 class ExtensionModuleError(Error):
-    """The Attic binary extension modules does not seem to be properly installed"""
+    """The Attic binary extension modules do not seem to be properly installed"""
 
 
 class UpgradableLock:
@@ -275,17 +274,6 @@ def is_cachedir(path):
     except OSError:
         pass
     return False
-
-
-def walk_path(path, skip_inodes=None):
-    st = os.lstat(path)
-    if skip_inodes and (st.st_ino, st.st_dev) in skip_inodes:
-        return
-    yield path, st
-    if stat.S_ISDIR(st.st_mode):
-        for f in os.listdir(path):
-            for x in walk_path(os.path.join(path, f), skip_inodes):
-                yield x
 
 
 def format_time(t):
