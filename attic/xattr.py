@@ -33,7 +33,8 @@ libc = CDLL(find_library('c'), use_errno=True)
 
 def _check(rv, path=None):
     if rv < 0:
-        raise OSError(get_errno(), path)
+        e = get_errno()
+        raise OSError(e, os.strerror(e), path)
     return rv
 
 if sys.platform.startswith('linux'):

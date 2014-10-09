@@ -5,7 +5,6 @@ import msgpack
 import os
 import pwd
 import re
-import stat
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -28,7 +27,7 @@ class Error(Exception):
 
 
 class ExtensionModuleError(Error):
-    """The Attic binary extension modules does not seem to be properly installed"""
+    """The Attic binary extension modules do not seem to be properly installed"""
 
 
 class UpgradableLock:

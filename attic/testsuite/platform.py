@@ -1,9 +1,9 @@
-import os
+import os, os.path
 import shutil
 import sys
 import tempfile
 import unittest
-from attic.platform import acl_get, acl_set
+from attic.platform import acl_get, acl_set, walk_path
 from attic.testsuite import AtticTestCase
 
 
@@ -33,10 +33,48 @@ other::r--
 def fakeroot_detected():
     return 'FAKEROOTKEY' in os.environ
 
+class WalkPathTestCase(AtticTestCase):
+
+    def touch(self, path):
+        with open(path, 'w'):
+            pass
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir)
+
+    def test_walk_path(self):
+        gen = walk_path(self.tmpdir)
+        dirpath, dirnames, filenames = next(gen)
+        self.assert_equal(dirpath, self.tmpdir)
+        self.assert_equal(dirnames, [])
+        self.assert_equal(filenames, [])
+        with self.assert_raises(StopIteration):
+            next(gen)
+
+        self.touch(os.path.join(self.tmpdir, 'file'))
+        os.makedirs(os.path.join(self.tmpdir, 'dir'))
+        self.touch(os.path.join(self.tmpdir, 'dir', 'subfile'))
+        self.touch(os.path.join(self.tmpdir, 'dir', 'subfile2'))
+
+        gen = walk_path(self.tmpdir)
+        dirpath, dirnames, filenames = next(gen)
+        self.assert_equal(dirpath, self.tmpdir)
+        self.assert_equal(dirnames, [ 'dir' ])
+        self.assert_equal(filenames, [ 'file' ])
+        dirpath, dirnames, filenames = next(gen)
+        self.assert_equal(dirpath, os.path.join(self.tmpdir, 'dir'))
+        self.assert_equal(dirnames, [])
+        self.assert_equal(sorted(filenames), [ 'subfile', 'subfile2' ])
+        with self.assert_raises(StopIteration):
+            next(gen)
+
 
 @unittest.skipUnless(sys.platform.startswith('linux'), 'linux only test')
 @unittest.skipIf(fakeroot_detected(), 'not compatible with fakeroot')
-class PlatformLinuxTestCase(AtticTestCase):
+class PlatformLinuxAclTestCase(AtticTestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -74,7 +112,7 @@ class PlatformLinuxTestCase(AtticTestCase):
 
 @unittest.skipUnless(sys.platform.startswith('darwin'), 'OS X only test')
 @unittest.skipIf(fakeroot_detected(), 'not compatible with fakeroot')
-class PlatformDarwinTestCase(AtticTestCase):
+class PlatformDarwinAclTestCase(AtticTestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
