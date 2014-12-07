@@ -17,8 +17,8 @@ from attic.key import key_creator
 from attic.helpers import Error, location_validator, format_time, \
     format_file_mode, ExcludePattern, exclude_path, adjust_patterns, to_localtime, \
     get_cache_dir, get_keys_dir, format_timedelta, prune_within, prune_split, \
-    Manifest, remove_surrogates, update_excludes, format_archive, check_extension_modules, Statistics, \
-    is_cachedir, bigint_to_int
+    Manifest, remove_surrogates, update_excludes, format_archive, check_extension_modules, \
+    Statistics, dir_is_tagged, bigint_to_int
 from attic.remote import RepositoryServer, RemoteRepository
 
 
@@ -125,7 +125,8 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                     continue
             else:
                 restrict_dev = None
-            self._process(archive, cache, args.excludes, args.exclude_caches, skip_inodes, path, restrict_dev)
+            self._process(archive, cache, args.excludes, args.exclude_caches,
+                          args.exclude_if_present, skip_inodes, path, restrict_dev)
         archive.save()
         if args.stats:
             t = datetime.now()
@@ -141,7 +142,8 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
             print('-' * 78)
         return self.exit_code
 
-    def _process(self, archive, cache, excludes, exclude_caches, skip_inodes, path, restrict_dev):
+    def _process(self, archive, cache, excludes, exclude_caches, exclude_if_present,
+                 skip_inodes, path, restrict_dev):
         if exclude_path(path, excludes):
             return
         try:
@@ -164,7 +166,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
             except IOError as e:
                 self.print_error('%s: %s', path, e)
         elif stat.S_ISDIR(st.st_mode):
-            if exclude_caches and is_cachedir(path):
+            if dir_is_tagged(path, exclude_caches, exclude_if_present):
                 return
             archive.process_item(path, st)
             try:
@@ -173,8 +175,8 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                 self.print_error('%s: %s', path, e)
             else:
                 for filename in sorted(entries):
-                    self._process(archive, cache, excludes, exclude_caches, skip_inodes,
-                                  os.path.join(path, filename), restrict_dev)
+                    self._process(archive, cache, excludes, exclude_caches, exclude_if_present,
+                                  skip_inodes, os.path.join(path, filename), restrict_dev)
         elif stat.S_ISLNK(st.st_mode):
             archive.process_symlink(path, st)
         elif stat.S_ISFIFO(st.st_mode):
@@ -541,6 +543,9 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         subparser.add_argument('--exclude-caches', dest='exclude_caches',
                                action='store_true', default=False,
                                help='exclude directories that contain a CACHEDIR.TAG file (http://www.brynosaurus.com/cachedir/spec.html)')
+        subparser.add_argument('--exclude-if-present', dest='exclude_if_present',
+                               metavar='FILENAME', action='append', type=str,
+                               help='exclude directories that contain the specified file')
         subparser.add_argument('-c', '--checkpoint-interval', dest='checkpoint_interval',
                                type=int, default=300, metavar='SECONDS',
                                help='write checkpoint every SECONDS seconds (Default: 300)')
