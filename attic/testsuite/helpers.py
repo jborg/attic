@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 import os
 import tempfile
 import unittest
-from attic.helpers import adjust_patterns, exclude_path, Location, format_timedelta, IncludePattern, ExcludePattern, make_path_safe, UpgradableLock, prune_within, prune_split, to_localtime, \
+from attic.helpers import adjust_include_patterns, exclude_path, Location, format_timedelta, IncludePattern, ExcludePattern, make_path_safe, UpgradableLock, prune_within, prune_split, to_localtime, \
     StableDict, int_to_bigint, bigint_to_int
 from attic.testsuite import AtticTestCase
 import msgpack
@@ -73,7 +73,7 @@ class PatternTestCase(AtticTestCase):
     ]
 
     def evaluate(self, paths, excludes):
-        patterns = adjust_patterns(paths, [ExcludePattern(p) for p in excludes])
+        patterns = adjust_include_patterns(paths, [ExcludePattern(p) for p in excludes])
         return [path for path in self.files if not exclude_path(path, patterns)]
 
     def test(self):

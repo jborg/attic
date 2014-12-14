@@ -15,8 +15,8 @@ from attic.repository import Repository
 from attic.cache import Cache
 from attic.key import key_creator
 from attic.helpers import Error, location_validator, format_time, \
-    format_file_mode, ExcludePattern, exclude_path, adjust_patterns, to_localtime, \
-    get_cache_dir, get_keys_dir, format_timedelta, prune_within, prune_split, \
+    format_file_mode, ExcludePattern, exclude_path, adjust_include_patterns, adjust_exclude_patterns, \
+    to_localtime, get_cache_dir, get_keys_dir, format_timedelta, prune_within, prune_split, \
     Manifest, remove_surrogates, update_excludes, format_archive, check_extension_modules, Statistics, \
     is_cachedir, bigint_to_int
 from attic.remote import RepositoryServer, RemoteRepository
@@ -125,7 +125,8 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                     continue
             else:
                 restrict_dev = None
-            self._process(archive, cache, args.excludes, args.exclude_caches, skip_inodes, path, restrict_dev)
+            excludes = adjust_exclude_patterns(path, args.excludes)
+            self._process(archive, cache, excludes, args.exclude_caches, skip_inodes, path, restrict_dev)
         archive.save()
         if args.stats:
             t = datetime.now()
@@ -192,7 +193,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         manifest, key = Manifest.load(repository)
         archive = Archive(repository, key, manifest, args.archive.archive,
                           numeric_owner=args.numeric_owner)
-        patterns = adjust_patterns(args.paths, args.excludes)
+        patterns = adjust_include_patterns(args.paths, args.excludes)
         dry_run = args.dry_run
         strip_components = args.strip_components
         dirs = []
