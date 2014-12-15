@@ -125,8 +125,8 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                     continue
             else:
                 restrict_dev = None
-            self._process(archive, cache, args.excludes, args.exclude_caches,
-                          args.exclude_if_present, skip_inodes, path, restrict_dev)
+            self._process(archive, cache, args.excludes, args.exclude_caches, args.exclude_if_present,
+                          args.keep_tag_files, skip_inodes, path, restrict_dev)
         archive.save()
         if args.stats:
             t = datetime.now()
@@ -143,7 +143,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         return self.exit_code
 
     def _process(self, archive, cache, excludes, exclude_caches, exclude_if_present,
-                 skip_inodes, path, restrict_dev):
+                 keep_tag_files, skip_inodes, path, restrict_dev):
         if exclude_path(path, excludes):
             return
         try:
@@ -166,7 +166,11 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
             except IOError as e:
                 self.print_error('%s: %s', path, e)
         elif stat.S_ISDIR(st.st_mode):
-            if dir_is_tagged(path, exclude_caches, exclude_if_present):
+            tag_path = dir_is_tagged(path, exclude_caches, exclude_if_present)
+            if tag_path:
+                if keep_tag_files:
+                    archive.process_item(path, st)
+                    archive.process_item(tag_path, st)
                 return
             archive.process_item(path, st)
             try:
@@ -176,7 +180,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
             else:
                 for filename in sorted(entries):
                     self._process(archive, cache, excludes, exclude_caches, exclude_if_present,
-                                  skip_inodes, os.path.join(path, filename), restrict_dev)
+                                  keep_tag_files, skip_inodes, os.path.join(path, filename), restrict_dev)
         elif stat.S_ISLNK(st.st_mode):
             archive.process_symlink(path, st)
         elif stat.S_ISFIFO(st.st_mode):
@@ -546,6 +550,9 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         subparser.add_argument('--exclude-if-present', dest='exclude_if_present',
                                metavar='FILENAME', action='append', type=str,
                                help='exclude directories that contain the specified file')
+        subparser.add_argument('--keep-tag-files', dest='keep_tag_files',
+                               action='store_true', default=False,
+                               help='keep tag files of excluded caches/directories')
         subparser.add_argument('-c', '--checkpoint-interval', dest='checkpoint_interval',
                                type=int, default=300, metavar='SECONDS',
                                help='write checkpoint every SECONDS seconds (Default: 300)')
