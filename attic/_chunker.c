@@ -1,12 +1,5 @@
 #include <Python.h>
 
-/* Windows build patch */
-#if defined(WIN32) || defined(MS_WINDOWS)
-typedef __int32 int32_t;
-typedef unsigned __int32 uint32_t;
-typedef unsigned __int8 uint8_t;
-#endif
-
 /* Cyclic polynomial / buzhash: https://en.wikipedia.org/wiki/Rolling_hash */
 
 static uint32_t table_base[] =
@@ -52,7 +45,7 @@ static uint32_t *
 buzhash_init_table(uint32_t seed)
 {
     int i;
-    uint32_t *table = (uint32_t *)malloc(1024);
+    uint32_t *table = malloc(1024);
     for(i = 0; i < 256; i++)
     {
         table[i] = table_base[i] ^ seed;
@@ -131,7 +124,6 @@ chunker_free(Chunker *c)
 static int
 chunker_fill(Chunker *c)
 {
-    PyObject *data;
     size_t n;
     PyObject *data;
     memmove(c->data, c->data + c->last, c->position + c->remaining - c->last);
@@ -176,7 +168,8 @@ chunker_process(Chunker *c)
 {
     uint32_t sum, chunk_mask = c->chunk_mask, min_size = c->min_size, window_size = c->window_size;
     int n = 0;
-    int old_last=0;
+    int old_last;
+
     if(c->done) {
         if(c->bytes_read == c->bytes_yielded)
             PyErr_SetNone(PyExc_StopIteration);

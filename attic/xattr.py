@@ -11,8 +11,6 @@ from ctypes.util import find_library
 def is_enabled():
     """Determine if xattr is enabled on the filesystem
     """
-    if sys.platform.startswith('win'):
-        return False
     with tempfile.NamedTemporaryFile() as fd:
         try:
             setxattr(fd.fileno(), 'user.name', b'value')
@@ -22,8 +20,6 @@ def is_enabled():
 
 
 def get_all(path, follow_symlinks=True):
-    if sys.platform.startswith('win'):
-        return {}
     try:
         return dict((name, getxattr(path, name, follow_symlinks=follow_symlinks))
                     for name in listxattr(path, follow_symlinks=follow_symlinks))
@@ -251,5 +247,5 @@ elif sys.platform.startswith('freebsd'):
             func = libc.extattr_set_link
         _check(func(path, EXTATTR_NAMESPACE_USER, name, value, len(value) if value else 0), path)
 
-elif not sys.platform.startswith('win'):
+else:
     raise Exception('Unsupported platform: %s' % sys.platform)

@@ -1,8 +1,9 @@
 import os
 import re
-from attic.helpers import acl_use_local_uid_gid, acl_use_stored_uid_gid, user2uid, group2gid
+from stat import S_ISLNK
+from attic.helpers import posix_acl_use_stored_uid_gid, user2uid, group2gid
 
-API_VERSION = 1
+API_VERSION = 2
 
 cdef extern from "sys/types.h":
     int ACL_TYPE_ACCESS
@@ -20,12 +21,28 @@ cdef extern from "sys/acl.h":
     char *acl_to_text(acl_t acl, ssize_t *len)
 
 cdef extern from "acl/libacl.h":
-    int acl_extended_file_nofollow(const char *path)
+    int acl_extended_file(const char *path)
 
 
 _comment_re = re.compile(' *#.*', re.M)
 
-def acl_append_numeric_ids(acl):
+
+def acl_use_local_uid_gid(acl):
+    """Replace the user/group field with the local uid/gid if possible
+    """
+    entries = []
+    for entry in acl.decode('ascii').split('\n'):
+        if entry:
+            fields = entry.split(':')
+            if fields[0] == 'user' and fields[1]:
+                fields[1] = user2uid(fields[1], fields[3])
+            elif fields[0] == 'group' and fields[1]:
+                fields[1] = group2gid(fields[1], fields[3])
+            entries.append(':'.join(entry.split(':')[:3]))
+    return ('\n'.join(entries)).encode('ascii')
+
+
+cdef acl_append_numeric_ids(acl):
     """Extend the "POSIX 1003.1e draft standard 17" format with an additional uid/gid field
     """
     entries = []
@@ -41,7 +58,7 @@ def acl_append_numeric_ids(acl):
     return ('\n'.join(entries)).encode('ascii')
 
 
-def acl_numeric_ids(acl):
+cdef acl_numeric_ids(acl):
     """Replace the "POSIX 1003.1e draft standard 17" user/group field with uid/gid
     """
     entries = []
@@ -49,15 +66,17 @@ def acl_numeric_ids(acl):
         if entry:
             type, name, permission = entry.split(':')
             if name and type == 'user':
-                entries.append(':'.join([type, str(user2uid(name, name)), permission]))
+                uid = str(user2uid(name, name))
+                entries.append(':'.join([type, uid, permission, uid]))
             elif name and type == 'group':
-                entries.append(':'.join([type, str(group2gid(name, name)), permission]))
+                gid = str(group2gid(name, name))
+                entries.append(':'.join([type, gid, permission, gid]))
             else:
                 entries.append(entry)
     return ('\n'.join(entries)).encode('ascii')
 
 
-def acl_get(path, item, numeric_owner=False):
+def acl_get(path, item, st, numeric_owner=False):
     """Saves ACL Entries
 
     If `numeric_owner` is True the user/group field is not preserved only uid/gid
@@ -67,7 +86,7 @@ def acl_get(path, item, numeric_owner=False):
     cdef char *default_text = NULL
     cdef char *access_text = NULL
 
-    if acl_extended_file_nofollow(<bytes>os.fsencode(path)) <= 0:
+    if S_ISLNK(st.st_mode) or acl_extended_file(<bytes>os.fsencode(path)) <= 0:
         return
     if numeric_owner:
         converter = acl_numeric_ids
@@ -78,12 +97,12 @@ def acl_get(path, item, numeric_owner=False):
         if access_acl:
             access_text = acl_to_text(access_acl, NULL)
             if access_text:
-                item[b'acl_access'] = acl_append_numeric_ids(access_text)
+                item[b'acl_access'] = converter(access_text)
         default_acl = acl_get_file(<bytes>os.fsencode(path), ACL_TYPE_DEFAULT)
         if default_acl:
             default_text = acl_to_text(default_acl, NULL)
             if default_text:
-                item[b'acl_default'] = acl_append_numeric_ids(default_text)
+                item[b'acl_default'] = converter(default_text)
     finally:
         acl_free(default_text)
         acl_free(default_acl)
@@ -100,7 +119,7 @@ def acl_set(path, item, numeric_owner=False):
     cdef acl_t access_acl = NULL
     cdef acl_t default_acl = NULL
     if numeric_owner:
-        converter = acl_use_stored_uid_gid
+        converter = posix_acl_use_stored_uid_gid
     else:
         converter = acl_use_local_uid_gid
     access_text = item.get(b'acl_access')

@@ -1,3 +1,5 @@
+import errno
+import fcntl
 import msgpack
 import os
 import select
@@ -7,17 +9,9 @@ import sys
 import tempfile
 
 from .hashindex import NSIndex
-from .helpers import Error, IntegrityError, StdAsyncIO
+from .helpers import Error, IntegrityError
 from .repository import Repository
 
-if sys.platform.startswith('win'):
-    import msvcrt
-else:
-    import fcntl
-
-    
-
-    
 BUFSIZE = 10 * 1024 * 1024
 
 
@@ -36,18 +30,17 @@ class RepositoryServer(object):
         self.restrict_to_paths = restrict_to_paths
 
     def serve(self):
-        if not sys.platform.startswith('win'):
-            # Make stdin non-blocking
-            fl = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
-            fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl | os.O_NONBLOCK)
-            # Make stdout blocking
-            fl = fcntl.fcntl(sys.stdout.fileno(), fcntl.F_GETFL)
-            fcntl.fcntl(sys.stdout.fileno(), fcntl.F_SETFL, fl & ~os.O_NONBLOCK)
+        # Make stdin non-blocking
+        fl = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
+        fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl | os.O_NONBLOCK)
+        # Make stdout blocking
+        fl = fcntl.fcntl(sys.stdout.fileno(), fcntl.F_GETFL)
+        fcntl.fcntl(sys.stdout.fileno(), fcntl.F_SETFL, fl & ~os.O_NONBLOCK)
         unpacker = msgpack.Unpacker(use_list=False)
         while True:
             r, w, es = self.t.select([sys.stdin], [], [], 10)
             if r:
-                data = os.read(sys.stdin.fileno(), BUFSIZE)                
+                data = os.read(sys.stdin.fileno(), BUFSIZE)
                 if not data:
                     return
                 unpacker.feed(data)
@@ -106,7 +99,7 @@ class RemoteRepository(object):
         if location.host == '__testsuite__':
             args = [sys.executable, '-m', 'attic.archiver', 'serve'] + self.extra_test_args
         else:
-            args = self.location.ssh_command
+            args = ['ssh']
             if location.port:
                 args += ['-p', str(location.port)]
             if location.user:
@@ -114,19 +107,14 @@ class RemoteRepository(object):
             else:
                 args.append('%s' % location.host)
             args += ['attic', 'serve']
-        # print (args)
         self.p = Popen(args, bufsize=0, stdin=PIPE, stdout=PIPE)
         self.stdin_fd = self.p.stdin.fileno()
         self.stdout_fd = self.p.stdout.fileno()
-        if sys.platform.startswith('win'):
-            msvcrt.setmode(self.stdin_fd, os.O_BINARY)
-            msvcrt.setmode(self.stdout_fd, os.O_BINARY)
-        else:
-            fcntl.fcntl(self.stdin_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdin_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
-            fcntl.fcntl(self.stdout_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdout_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+        fcntl.fcntl(self.stdin_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdin_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+        fcntl.fcntl(self.stdout_fd, fcntl.F_SETFL, fcntl.fcntl(self.stdout_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
         self.r_fds = [self.stdout_fd]
         self.x_fds = [self.stdin_fd, self.stdout_fd]
-        self.t=StdAsyncIO(BUFSIZE)
+
         version = self.call('negotiate', 1)
         if version != 1:
             raise Exception('Server insisted on using unsupported protocol version %d' % version)
@@ -176,16 +164,13 @@ class RemoteRepository(object):
                             return
                 except KeyError:
                     break
-            #In windows Iterate instead select ?       self.x_fds  
-            r, w, x = self.t.select(self.r_fds, w_fds, self.x_fds, 1)
-            # print (r,w,x)
+            r, w, x = select.select(self.r_fds, w_fds, self.x_fds, 1)
             if x:
                 raise Exception('FD exception occured')
             if r:
-                data = self.t.read_t(self.stdout_fd, BUFSIZE)    
+                data = os.read(self.stdout_fd, BUFSIZE)
                 if not data:
                     raise ConnectionClosed()
-                # print ("r",data)
                 self.unpacker.feed(data)
                 for type, msgid, error, res in self.unpacker:
                     if msgid in self.ignore_responses:
@@ -210,15 +195,18 @@ class RemoteRepository(object):
                         args = (self.preload_ids.pop(0),)
                         self.msgid += 1
                         self.cache.setdefault(args, []).append(self.msgid)
-                        self.to_send = msgpack.packb((1, self.msgid, cmd, args))                    
+                        self.to_send = msgpack.packb((1, self.msgid, cmd, args))
 
                 if self.to_send:
-                    # print ("written:",len(self.to_send))
-                    self.to_send = self.to_send[self.t.write_t(self.stdin_fd, self.to_send):]
-                    # print ("no blocked")
+                    try:
+                        self.to_send = self.to_send[os.write(self.stdin_fd, self.to_send):]
+                    except OSError as e:
+                        # io.write might raise EAGAIN even though select indicates
+                        # that the fd should be writable
+                        if e.errno != errno.EAGAIN:
+                            raise
                 if not self.to_send and not (calls or self.preload_ids):
                     w_fds = []
-                
         self.ignore_responses |= set(waiting_for)
 
     def check(self, repair=False):
@@ -252,7 +240,6 @@ class RemoteRepository(object):
 
     def close(self):
         if self.p:
-            self.t.stop()
             self.p.stdin.close()
             self.p.stdout.close()
             self.p.wait()

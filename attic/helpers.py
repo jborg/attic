@@ -1,27 +1,18 @@
 import argparse
 import binascii
+import grp
 import msgpack
 import os
+import pwd
 import re
 import stat
 import sys
 import time
-import select
-import psutil
 from datetime import datetime, timezone, timedelta
 from fnmatch import translate
 from operator import attrgetter
+import fcntl
 
-
-if sys.platform.startswith('win'):
-    import threading,signal
-    import queue
-else:
-    import grp
-    import pwd
-    import fcntl
-   
-    
 import attic.hashindex
 import attic.chunker
 import attic.crypto
@@ -53,27 +44,29 @@ class UpgradableLock:
             self.fd = open(path, 'r+')
         except IOError:
             self.fd = open(path, 'r')
-        if sys.platform.startswith('win'):
-            #Open is always exclusive in win
-            self.is_exclusive = True
-        else:
+        try:
             if exclusive:
                 fcntl.lockf(self.fd, fcntl.LOCK_EX)
             else:
                 fcntl.lockf(self.fd, fcntl.LOCK_SH)
-            self.is_exclusive = exclusive
+        # Python 3.2 raises IOError, Python3.3+ raises OSError
+        except (IOError, OSError):
+            if exclusive:
+                raise self.WriteLockFailed(self.path)
+            else:
+                raise self.ReadLockFailed(self.path)
+        self.is_exclusive = exclusive
 
     def upgrade(self):
-        if not sys.platform.startswith('win'):
-            try:
-                fcntl.lockf(self.fd, fcntl.LOCK_EX)
-            except OSError as e:
-                raise self.LockUpgradeFailed(self.path)
-            self.is_exclusive = True
+        try:
+            fcntl.lockf(self.fd, fcntl.LOCK_EX)
+        # Python 3.2 raises IOError, Python3.3+ raises OSError
+        except (IOError, OSError):
+            raise self.WriteLockFailed(self.path)
+        self.is_exclusive = True
 
     def release(self):
-        if not sys.platform.startswith('win'):
-            fcntl.lockf(self.fd, fcntl.LOCK_UN)
+        fcntl.lockf(self.fd, fcntl.LOCK_UN)
         self.fd.close()
 
 
@@ -359,32 +352,46 @@ def memoize(function):
 def uid2user(uid, default=None):
     try:
         return pwd.getpwuid(uid).pw_name
-    except (KeyError,NameError):
-        return None
+    except KeyError:
+        return default
 
 
 @memoize
 def user2uid(user, default=None):
     try:
         return user and pwd.getpwnam(user).pw_uid
-    except (KeyError,NameError):
-        return None
+    except KeyError:
+        return default
 
 
 @memoize
 def gid2group(gid, default=None):
     try:
         return grp.getgrgid(gid).gr_name
-    except (KeyError,NameError):
-        return None
+    except KeyError:
+        return default
 
 
 @memoize
 def group2gid(group, default=None):
     try:
         return group and grp.getgrnam(group).gr_gid
-    except (KeyError,NameError):
-        return None
+    except KeyError:
+        return default
+
+
+def posix_acl_use_stored_uid_gid(acl):
+    """Replace the user/group field with the stored uid/gid
+    """
+    entries = []
+    for entry in acl.decode('ascii').split('\n'):
+        if entry:
+            fields = entry.split(':')
+            if len(fields) == 4:
+                entries.append(':'.join([fields[0], fields[3], fields[2]]))
+            else:
+                entries.append(entry)
+    return ('\n'.join(entries)).encode('ascii')
 
 
 class Location:
@@ -393,14 +400,9 @@ class Location:
     proto = user = host = port = path = archive = None
     ssh_re = re.compile(r'(?P<proto>ssh)://(?:(?P<user>[^@]+)@)?'
                         r'(?P<host>[^:/#]+)(?::(?P<port>\d+))?'
-                        r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
-    if sys.platform.startswith('win'):                            
-        file_re = re.compile(r'(?P<proto>file)://'
-                         r'(?P<path>[\w]:[^:]+|[^:]+)(?:::(?P<archive>.+))?')
-    else:
-        file_re = re.compile(r'(?P<proto>file)://'
-                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?')
-        
+                        r'(?P<path>[^:]+)(?:::(?P<archive>.+))?$')
+    file_re = re.compile(r'(?P<proto>file)://'
+                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?$')
     scp_re = re.compile(r'((?:(?P<user>[^@]+)@)?(?P<host>[^:/]+):)?'
                         r'(?P<path>[^:]+)(?:::(?P<archive>.+))?$')
 
@@ -424,7 +426,6 @@ class Location:
             self.proto = m.group('proto')
             self.path = m.group('path')
             self.archive = m.group('archive')
-            print (self.proto,self.path)
             return True
         m = self.scp_re.match(text)
         if m:
@@ -469,35 +470,6 @@ def location_validator(archive=None):
         return loc
     return validator
 
-def ssh_command_validator(args):
-    def parse_command(c,sep):
-        c_list=c.split(sep)
-        tmplist=[]
-        next_str=False
-        # print("bucle")
-        for elem in c_list:
-            # print (elem)
-            if elem == '':                    
-               next_str=True
-               continue
-            if next_str:
-               tmplist.append(elem)
-            else:
-               tmplist+=elem.strip().split(" ")
-            next_str=False 
-        return tmplist
-    c=args.ssh_command.replace("\\ ","__spaces__")
-    c_list=[c]
-    # print(c_list)
-    c_list=parse_command(c,"'")
-    if len(c_list) < 2:
-        c_list=parse_command(c,'"')
-    # print(c_list)
-    c_list=[w.replace("__spaces__","\\ ") for w in c_list]
-    if hasattr(args, 'repository'):
-      args.repository.ssh_command=c_list
-    if hasattr(args, 'archive'):
-      args.archive.ssh_command=c_list
 
 def read_msgpack(filename):
     with open(filename, 'rb') as fd:
@@ -576,173 +548,21 @@ else:
 
     unhexlify = binascii.unhexlify
 
-    
-class StdAsyncIOt():
-    """Implementes Non blocking readads compatible with windows"""
 
-    def _worker_reader_t(self):
-      #print ("Hilo")
-      while self.run and not self.err:
-        try:
-          data=os.read(self.fd, self.BUFSIZE)
-          #print (self.BUFSIZE,data)
-          #if data == '' and self.process.poll() != None: raise "Null Data Readed"
-        except Exception as e:
-          self.err=True
-          # self.run=
-          print("worker_reader_t error os.read:",e)
-        try:
-          self.q.put(data)
-        except Exception as e:
-          self.err=True
-          # self.run=False
-          print("worker_reader_t queue error:",e)
-      # print ("worker_reader_t finish")
+def bigint_to_int(mtime):
+    """Convert bytearray to int
+    """
+    if isinstance(mtime, bytes):
+        return int.from_bytes(mtime, 'little', signed=True)
+    return mtime
 
-    def _worker_writer_t(self):
-      #print ("Hilo")
-      while not self.err and (not self.q.empty() or self.run):
-        try:
-          try:
-            data=self.q.get(timeout=1)
-          except:
-            continue
-          data=os.write(self.fd, data)
-          # print ("Size:",self.q.qsize())
-          self.q.task_done()
-          # print ("Write Done")
-          #print (self.BUFSIZE,data)
-          #if data == '' and self.process.poll() != None: raise "Null Data Readed"
-        except Exception as e:
-          self.err=True
-          # self.run=False
-          print("worker_writer_t error:",e)
-      # print ("worker_writer_t finish")        
-          
-    def __init__(self,mode='read',SIZE=8192):
-        self.run=False
-        if sys.platform.startswith('win'):
-            # print ("New Async Thread")
-            self.BUFSIZE=SIZE
-            self.MAXSIZE=SIZE
-            if mode == 'read':
-                self.MAXSIZE=0
-            self.q=queue.Queue(self.MAXSIZE)
-            self.err=False
-            # self.fd=r
-            # self.run=True
-            # self.t=threading.Thread(target=self.worker_t)               
-            # self.t.start()
-            self.mode=mode
-            if mode == 'read':
-                self.t=threading.Thread(target=self._worker_reader_t)
-            else:
-                self.t=threading.Thread(target=self._worker_writer_t)
-          
 
-    def start(self,fd):
-        if not self.t.isAlive() and not self.err:
-            # print ("r start") 
-            self.fd = fd
-            # self.q=Queue()       
-            # self.err=False
-            self.run=True
-            self.t.start()       
-        
-    def stop(self):       
-        self.run=False
-        # print ("stopping",self.mode)
-        if self.mode == 'write':
-            self.t.join()
-        
-    def is_read(self):
-        return not self.q.empty()
-        
-    def is_write(self):
-        if self.MAXSIZE == 0:
-            return True
-        if self.q.qsize() < self.MAXSIZE-1:
-            return True
-        print ("MAXSIZE")
-        return False
-        
-    def read_t(self,stdout_fd, BUFSIZE):
-        if sys.platform.startswith('win'):
-            try:
-                data=self.q.get_nowait()
-                self.q.task_done()
-                return data
-            except Exception as e:
-                print ("read_t",e)
-                #self.run=False
-                pass
-        else:
-            return os.read(stdout_fd, BUFSIZE)
+def int_to_bigint(value):
+    """Convert integers larger than 64 bits to bytearray
 
-    def write_t(self,stdin_fd,data):
-        if sys.platform.startswith('win'):
-            try:
-                self.q.put_nowait(data)
-                # self.q.task_done()
-                return len(data)
-            except Exception as e:
-                print ("write_t",e)
-                #self.run=False
-                pass
-        else:
-            return os.write(stdin_fd, data)
+    Smaller integers are left alone
+    """
+    if value.bit_length() > 63:
+        return value.to_bytes((value.bit_length() + 9) // 8, 'little', signed=True)
+    return value
 
-class StdAsyncIO:
-    def __init__(self,BUFSIZE=10*1024*1024):
-        self.BUFSIZE=BUFSIZE
-        self.std_list=dict()
-    
-    def stop(self):
-        for key,elem in self.std_list.items():
-            elem.stop()
-            
-    def select(self,r,w,x,timeout):
-        if sys.platform.startswith('win'):
-            ret_r=[]
-            ret_w=[]
-            ret_x=[]
-            wait=False
-            for elem in r:
-                if elem in self.std_list:
-                    if  self.std_list[elem].err:
-                        ret_x.append(elem)
-                    elif self.std_list[elem].is_read():
-                        ret_r.append(elem)
-                    else:
-                        self.std_list[elem].start(elem)
-                        wait=self.std_list[elem].t
-                        # self.std_list[elem].t.join(timeout) 
-                else:
-                    self.std_list[elem]=StdAsyncIOt('read',self.BUFSIZE)
-                    self.std_list[elem].start(elem)
-                    wait=self.std_list[elem].t
-                # self.std_list[elem].t.join(timeout) 
-            for elem in w:
-                if elem in self.std_list:
-                    if  self.std_list[elem].err:
-                        ret_x.append(elem)
-                    elif self.std_list[elem].is_write():
-                        ret_w.append(elem)
-                    else:
-                        self.std_list[elem].start(elem)
-                else:
-                    qsize=int(psutil.phymem_usage()[1])/96000 #probar 128000
-                    #qsize=8192
-                    self.std_list[elem]=StdAsyncIOt('write',qsize)
-                    self.std_list[elem].start(elem)
-            if len(ret_w) <1 and len(ret_x) <1 and wait:
-                wait.join(timeout)
-            return ret_r,ret_w,ret_x
-        else:
-            return select.select(r,w,x,timeout)
-      
-    def read_t(self,stdout_fd, BUFSIZE):
-        return self.std_list[stdout_fd].read_t(stdout_fd, BUFSIZE)
-    def write_t(self,stdin_fd,data):
-        return self.std_list[stdin_fd].write_t(stdin_fd,data)
-        

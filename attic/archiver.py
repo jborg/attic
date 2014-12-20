@@ -14,7 +14,7 @@ from attic.archive import Archive, ArchiveChecker
 from attic.repository import Repository
 from attic.cache import Cache
 from attic.key import key_creator
-from attic.helpers import Error, location_validator, format_time, ssh_command_validator, \
+from attic.helpers import Error, location_validator, format_time, \
     format_file_mode, ExcludePattern, exclude_path, adjust_patterns, to_localtime, \
     get_cache_dir, get_keys_dir, format_timedelta, prune_within, prune_split, \
     Manifest, remove_surrogates, update_excludes, format_archive, check_extension_modules, Statistics, \
@@ -472,11 +472,10 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         subparser.add_argument('repository', metavar='REPOSITORY',
                                type=location_validator(archive=False),
                                help='repository to create')
-        subparser.add_argument('--rsh', dest='ssh_command',
-                               default='ssh',help='execute command to remote conection ')
         subparser.add_argument('-e', '--encryption', dest='encryption',
                                choices=('none', 'passphrase', 'keyfile'), default='none',
                                help='select encryption method')
+
         check_epilog = textwrap.dedent("""
         The check command verifies the consistency of a repository and the corresponding
         archives. The underlying repository data files are first checked to detect bit rot
@@ -495,8 +494,6 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         subparser.add_argument('repository', metavar='REPOSITORY',
                                type=location_validator(archive=False),
                                help='repository to check consistency of')
-        subparser.add_argument('--rsh', dest='ssh_command',
-                               default='ssh',help='execute command to remote conection ')
         subparser.add_argument('--repository-only', dest='repo_only', action='store_true',
                                default=False,
                                help='only perform repository checks')
@@ -518,8 +515,6 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         subparser.set_defaults(func=self.do_change_passphrase)
         subparser.add_argument('repository', metavar='REPOSITORY',
                                type=location_validator(archive=False))
-        subparser.add_argument('--rsh', dest='ssh_command',
-                               default='ssh',help='execute command to remote conection ')
 
         create_epilog = textwrap.dedent("""
         This command creates a backup archive containing all files found while recursively
@@ -534,8 +529,6 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                                           epilog=create_epilog,
                                           formatter_class=argparse.RawDescriptionHelpFormatter)
         subparser.set_defaults(func=self.do_create)
-        subparser.add_argument('--rsh', dest='ssh_command',
-                               default='ssh',help='execute command to remote conection ')
         subparser.add_argument('-s', '--stats', dest='stats',
                                action='store_true', default=False,
                                help='print statistics for the created archive')
@@ -576,8 +569,6 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                                           epilog=extract_epilog,
                                           formatter_class=argparse.RawDescriptionHelpFormatter)
         subparser.set_defaults(func=self.do_extract)
-        subparser.add_argument('--rsh', dest='ssh_command',
-                               default='ssh',help='execute command to remote conection ')
         subparser.add_argument('-n', '--dry-run', dest='dry_run',
                                default=False, action='store_true',
                                help='do not actually change any files')
@@ -608,8 +599,6 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                                           epilog=delete_epilog,
                                           formatter_class=argparse.RawDescriptionHelpFormatter)
         subparser.set_defaults(func=self.do_delete)
-        subparser.add_argument('--rsh', dest='ssh_command',
-                               default='ssh',help='execute command to remote conection ')
         subparser.add_argument('-s', '--stats', dest='stats',
                                action='store_true', default=False,
                                help='print statistics for the deleted archive')
@@ -625,8 +614,6 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                                           epilog=list_epilog,
                                           formatter_class=argparse.RawDescriptionHelpFormatter)
         subparser.set_defaults(func=self.do_list)
-        subparser.add_argument('--rsh', dest='ssh_command',
-                               default='ssh',help='execute command to remote conection ')
         subparser.add_argument('src', metavar='REPOSITORY_OR_ARCHIVE', type=location_validator(),
                                help='repository/archive to list contents of')
         mount_epilog = textwrap.dedent("""
@@ -640,10 +627,8 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                                           epilog=mount_epilog,
                                           formatter_class=argparse.RawDescriptionHelpFormatter)
         subparser.set_defaults(func=self.do_mount)
-        subparser.add_argument('--rsh', dest='ssh_command',
-                               default='ssh',help='execute command to remote conection ')
-        subparser.add_argument('archive', metavar='ARCHIVE', type=location_validator(archive=True),
-                               help='archive to mount')
+        subparser.add_argument('src', metavar='REPOSITORY_OR_ARCHIVE', type=location_validator(),
+                               help='repository/archive to mount')
         subparser.add_argument('mountpoint', metavar='MOUNTPOINT', type=str,
                                help='where to mount filesystem')
         subparser.add_argument('-f', '--foreground', dest='foreground',
@@ -660,8 +645,6 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                                           epilog=info_epilog,
                                           formatter_class=argparse.RawDescriptionHelpFormatter)
         subparser.set_defaults(func=self.do_info)
-        subparser.add_argument('--rsh', dest='ssh_command',
-                               default='ssh',help='execute command to remote conection ')
         subparser.add_argument('archive', metavar='ARCHIVE',
                                type=location_validator(archive=True),
                                help='archive to display information about')
@@ -694,8 +677,6 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                                           epilog=prune_epilog,
                                           formatter_class=argparse.RawDescriptionHelpFormatter)
         subparser.set_defaults(func=self.do_prune)
-        subparser.add_argument('--rsh', dest='ssh_command',
-                               default='ssh',help='execute command to remote conection ')
         subparser.add_argument('-n', '--dry-run', dest='dry_run',
                                default=False, action='store_true',
                                help='do not change repository')
@@ -733,7 +714,6 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         args = parser.parse_args(args or ['-h'])
         self.verbose = args.verbose
         update_excludes(args)
-        ssh_command_validator(args)
         return args.func(args)
 
 
