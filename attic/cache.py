@@ -156,7 +156,7 @@ class Cache(object):
             data = self.key.decrypt(archive_id, cdata)
             add(archive_id, len(data), len(cdata))
             archive = msgpack.unpackb(data)
-            if archive[b'version'] != 1:
+            if archive[b'version'] not in [1, 2]:
                 raise Exception('Unknown archive metadata version')
             decode_dict(archive, (b'name',))
             print('Analyzing archive:', archive[b'name'])

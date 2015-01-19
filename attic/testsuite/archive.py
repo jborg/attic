@@ -17,7 +17,7 @@ class MockCache:
 class ChunkBufferTestCase(AtticTestCase):
 
     def test(self):
-        data = [{b'foo': 1}, {b'bar': 2}]
+        data = [{b'path': 1}, {b'path': 2}]
         cache = MockCache()
         key = PlaintextKey()
         chunks = CacheChunkBuffer(cache, key, None)

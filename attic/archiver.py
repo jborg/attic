@@ -2,6 +2,7 @@ import argparse
 from binascii import hexlify
 from datetime import datetime
 from operator import attrgetter
+from collections import deque
 import functools
 import io
 import os
@@ -142,47 +143,49 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         return self.exit_code
 
     def _process(self, archive, cache, excludes, exclude_caches, skip_inodes, path, restrict_dev):
-        if exclude_path(path, excludes):
-            return
-        try:
-            st = os.lstat(path)
-        except OSError as e:
-            self.print_error('%s: %s', path, e)
-            return
-        if (st.st_ino, st.st_dev) in skip_inodes:
-            return
-        # Entering a new filesystem?
-        if restrict_dev and st.st_dev != restrict_dev:
-            return
-        # Ignore unix sockets
-        if stat.S_ISSOCK(st.st_mode):
-            return
-        self.print_verbose(remove_surrogates(path))
-        if stat.S_ISREG(st.st_mode):
+        queue = deque([path])
+        while queue:
+            path = queue.popleft()
+            if exclude_path(path, excludes):
+                continue
             try:
-                archive.process_file(path, st, cache)
-            except IOError as e:
-                self.print_error('%s: %s', path, e)
-        elif stat.S_ISDIR(st.st_mode):
-            if exclude_caches and is_cachedir(path):
-                return
-            archive.process_item(path, st)
-            try:
-                entries = os.listdir(path)
+                st = os.lstat(path)
             except OSError as e:
                 self.print_error('%s: %s', path, e)
+                continue
+            if (st.st_ino, st.st_dev) in skip_inodes:
+                continue
+            # Entering a new filesystem?
+            if restrict_dev and st.st_dev != restrict_dev:
+                continue
+            # Ignore unix sockets
+            if stat.S_ISSOCK(st.st_mode):
+                continue
+            self.print_verbose(remove_surrogates(path))
+            if stat.S_ISREG(st.st_mode):
+                try:
+                    archive.process_file(path, st, cache)
+                except IOError as e:
+                    self.print_error('%s: %s', path, e)
+            elif stat.S_ISDIR(st.st_mode):
+                if exclude_caches and is_cachedir(path):
+                    continue
+                archive.process_item(path, st)
+                try:
+                    entries = os.listdir(path)
+                except OSError as e:
+                    self.print_error('%s: %s', path, e)
+                else:
+                    for filename in sorted(entries):
+                        queue.append(os.path.join(path, filename))
+            elif stat.S_ISLNK(st.st_mode):
+                archive.process_symlink(path, st)
+            elif stat.S_ISFIFO(st.st_mode):
+                archive.process_item(path, st)
+            elif stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
+                archive.process_dev(path, st)
             else:
-                for filename in sorted(entries):
-                    self._process(archive, cache, excludes, exclude_caches, skip_inodes,
-                                  os.path.join(path, filename), restrict_dev)
-        elif stat.S_ISLNK(st.st_mode):
-            archive.process_symlink(path, st)
-        elif stat.S_ISFIFO(st.st_mode):
-            archive.process_item(path, st)
-        elif stat.S_ISCHR(st.st_mode) or stat.S_ISBLK(st.st_mode):
-            archive.process_dev(path, st)
-        else:
-            self.print_error('Unknown file type: %s', path)
+                self.print_error('Unknown file type: %s', path)
 
     def do_extract(self, args):
         """Extract archive contents"""
@@ -195,7 +198,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         patterns = adjust_patterns(args.paths, args.excludes)
         dry_run = args.dry_run
         strip_components = args.strip_components
-        dirs = []
+        dirs = deque()
         for item in archive.iter_items(lambda item: not exclude_path(item[b'path'], patterns), preload=True):
             orig_path = item[b'path']
             if strip_components:
@@ -203,8 +206,21 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                 if not item[b'path']:
                     continue
             if not args.dry_run:
-                while dirs and not item[b'path'].startswith(dirs[-1][b'path']):
-                    archive.extract_item(dirs.pop(-1))
+                if archive.metadata[b'version'] >= 2:
+                    # Items are in breadth-first order
+                    current = item[b'path'].split(os.sep)
+                    while dirs:
+                        nextpending = dirs[0][b'path'].split(os.sep)
+                        # Directory attributes can be applied if we're one
+                        # level further and "right" of the pending subtree
+                        if len(current) > len(nextpending) and current[:-1] > nextpending:
+                            archive.extract_item(dirs.popleft())
+                        else:
+                            break
+                else:
+                    # Items are in depth-first order
+                    while dirs and not item[b'path'].startswith(dirs[-1][b'path']):
+                        archive.extract_item(dirs.pop())
             self.print_verbose(remove_surrogates(orig_path))
             try:
                 if dry_run:
@@ -220,7 +236,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
 
         if not args.dry_run:
             while dirs:
-                archive.extract_item(dirs.pop(-1))
+                archive.extract_item(dirs.popleft())
         return self.exit_code
 
     def do_delete(self, args):
@@ -256,7 +272,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
             archive = Archive(repository, key, manifest, args.src.archive)
         else:
             archive = None
-        operations = AtticOperations(key, repository, manifest, archive)
+        operations = AtticOperations(key, repository, manifest, archive, args.verbose and args.foreground)
         self.print_verbose("Mounting filesystem")
         try:
             operations.mount(args.mountpoint, args.options, args.foreground)

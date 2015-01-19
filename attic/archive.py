@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from getpass import getuser
 from itertools import groupby
+import bintrees
 import errno
 import shutil
 import tempfile
@@ -12,6 +13,7 @@ import socket
 import stat
 import sys
 import time
+from functools import total_ordering
 from io import BytesIO
 from attic import xattr
 from attic.platform import acl_get, acl_set
@@ -63,6 +65,42 @@ class DownloadPipeline:
             yield self.key.decrypt(id_, data)
 
 
+@total_ordering
+class BFSPath():
+    """ Container for segments of file paths to make them comparable in breadth-first order.
+    """
+
+    def __init__(self, path=[]):
+        self.path = path
+
+    def __lt__(self, other):
+        if len(self.path) != len(other.path):
+            return len(self.path) < len(other.path)
+        return list.__lt__(self.path, other.path)
+
+    def __eq__(self, other):
+        return self.path == other.path
+
+
+class MetadataIndex:
+
+    def __init__(self):
+        self.tree = bintrees.RBTree()
+
+    def add(self, path, id, offset, length):
+        self.tree[BFSPath(path)] = (id, offset, length)
+
+    def lookup(self, path):
+        try:
+            return self.tree.floor_item(BFSPath(path))
+        except KeyError:
+            return self.tree.min_item()
+
+    def lookup_many(self, path):
+        startkey = self.lookup(path)[0]
+        return self.tree.value_slice(startkey, None)
+
+
 class ChunkBuffer:
     BUFFER_SIZE = 1 * 1024 * 1024
 
@@ -72,8 +110,15 @@ class ChunkBuffer:
         self.chunks = []
         self.key = key
         self.chunker = Chunker(WINDOW_SIZE, CHUNK_MASK, CHUNK_MIN, self.key.chunk_seed)
+        # Keep track of first item in each series of ChunkBuffer fill-ups
+        self.firstitem = None
+        self.partialchunk = 0
+        self.chunks_index = []
 
     def add(self, item):
+        if self.firstitem is None:
+            self.firstitem = item
+            self.partialchunk = self.buffer.tell()
         self.buffer.write(self.packer.pack(StableDict(item)))
         if self.is_full():
             self.flush()
@@ -86,10 +131,14 @@ class ChunkBuffer:
             return
         self.buffer.seek(0)
         chunks = list(bytes(s) for s in self.chunker.chunkify(self.buffer))
+        length = self.buffer.tell()
         self.buffer.seek(0)
         self.buffer.truncate(0)
         # Leave the last partial chunk in the buffer unless flush is True
         end = None if flush or len(chunks) == 1 else -1
+        # Put index and offset of next item into chunks index
+        self.chunks_index.append((self.firstitem[b'path'], (len(self.chunks), self.partialchunk, length)))
+        self.firstitem = None
         for chunk in chunks[:end]:
             self.chunks.append(self.write_chunk(chunk))
         if end == -1:
@@ -154,11 +203,16 @@ class Archive:
         self.id = id
         data = self.key.decrypt(self.id, self.repository.get(self.id))
         self.metadata = msgpack.unpackb(data)
-        if self.metadata[b'version'] != 1:
-            raise Exception('Unknown archive metadata version')
+        if self.metadata[b'version'] not in [1, 2]:
+            raise Exception('Unknown archive metadata version: {}'.format(self.metadata[b'version']))
         decode_dict(self.metadata, (b'name', b'hostname', b'username', b'time'))
         self.metadata[b'cmdline'] = [arg.decode('utf-8', 'surrogateescape') for arg in self.metadata[b'cmdline']]
         self.name = self.metadata[b'name']
+        self.metadata_index = None
+        if self.metadata[b'version'] >= 2:
+            self.metadata_index = MetadataIndex()
+            for (path, (idx, offset, length)) in self.metadata[b'metadata_index']:
+                self.metadata_index.add(path.split(b'/'), idx, offset, length)
 
     @property
     def ts(self):
@@ -190,9 +244,10 @@ class Archive:
             raise self.AlreadyExists(name)
         self.items_buffer.flush(flush=True)
         metadata = StableDict({
-            'version': 1,
+            'version': 2,
             'name': name,
             'items': self.items_buffer.chunks,
+            'metadata_index': self.items_buffer.chunks_index,
             'cmdline': sys.argv,
             'hostname': socket.gethostname(),
             'username': getuser(),
@@ -583,7 +638,7 @@ class ArchiveChecker:
             # Some basic sanity checks of the payload before feeding it into msgpack
             if len(data) < 2 or ((data[0] & 0xf0) != 0x80) or ((data[1] & 0xe0) != 0xa0):
                 continue
-            if not b'cmdline' in data or not b'\xa7version\x01' in data:
+            if not b'cmdline' in data or not any(v in data for v in [b'\xa7version\x01', b'\xa7version\x02']):
                 continue
             try:
                 archive = msgpack.unpackb(data)
@@ -683,8 +738,8 @@ class ArchiveChecker:
             cdata = self.repository.get(archive_id)
             data = self.key.decrypt(archive_id, cdata)
             archive = StableDict(msgpack.unpackb(data))
-            if archive[b'version'] != 1:
-                raise Exception('Unknown archive metadata version')
+            if archive[b'version'] not in [1, 2]:
+                raise Exception('Unknown archive metadata version: {}'.format(archive[b'version']))
             decode_dict(archive, (b'name', b'hostname', b'username', b'time'))  # fixme: argv
             items_buffer = ChunkBuffer(self.key)
             items_buffer.write_chunk = add_callback
