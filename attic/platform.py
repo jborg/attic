@@ -23,7 +23,6 @@ elif platform.startswith('CYGWIN'):
             pass
 
     def acl_set(path, item, numeric_owner=False):
-        print ("acl_set()")
         try:
             ACL_Access = item[b'acl_access']
         except:
@@ -34,11 +33,9 @@ elif platform.startswith('CYGWIN'):
         for line in buf:
             if len(line.strip()) > 0 and (not line.strip().startswith('#')):
                 param = ['setfacl.exe', '-m', line.rstrip(), path]
-                #print(' '.join(param))
                 retVal = subprocess.call(param)
                 if retVal != 0:
-                    print(retVal)
-                    raise Exception('set ACL not successful')
+                    raise Exception('ACLs not set successfully')
                                       
 else:
     API_VERSION = 1
