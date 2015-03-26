@@ -55,4 +55,6 @@ Standalone binaries
 -------------------
 
 Prebuilt standalone binaries that work on
-most Linux systems can be found :artifacts:`here <>`.
+most Linux systems can be found :artifacts:`here <>`. Please use the 
+`ACCDCC2D <http://pgp.mit.edu/pks/lookup?op=vindex&search=0xA72F8337ACCDCC2D>`_ key to
+verify signatures of the tar archives.
