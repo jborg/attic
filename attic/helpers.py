@@ -17,7 +17,6 @@ import attic.hashindex
 import attic.chunker
 import attic.crypto
 
-
 class Error(Exception):
     """Error base class"""
 

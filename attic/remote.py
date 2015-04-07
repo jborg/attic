@@ -38,7 +38,7 @@ class RepositoryServer(object):
         fcntl.fcntl(sys.stdout.fileno(), fcntl.F_SETFL, fl & ~os.O_NONBLOCK)
         unpacker = msgpack.Unpacker(use_list=False)
         while True:
-            r, w, es = select.select([sys.stdin], [], [], 10)
+            r, w, es = self.t.select([sys.stdin], [], [], 10)
             if r:
                 data = os.read(sys.stdin.fileno(), BUFSIZE)
                 if not data:
