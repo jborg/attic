@@ -167,3 +167,14 @@ Examples
     New passphrase: 
     Enter same passphrase again: 
     Key file "/home/USER/.attic/keys/tmp_encrypted_repo" updated
+
+.. include:: usage/serve.rst.inc
+
+Examples
+~~~~~~~~
+::
+
+    # Allow an SSH keypair to only run attic, and only have access to repo.attic
+    # This will help to secure an automated remote backup system.
+    $ cat ~/.ssh/authorized_keys
+    command="attic serve --restrict-to-path /path/to/repo.attic" ssh-rsa AAAAB3[...]
