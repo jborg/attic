@@ -353,7 +353,8 @@ class Archive:
             b'mode': st.st_mode,
             b'uid': st.st_uid, b'user': uid2user(st.st_uid),
             b'gid': st.st_gid, b'group': gid2group(st.st_gid),
-            b'mtime': int_to_bigint(st_mtime_ns(st))
+            b'mtime': int_to_bigint(st_mtime_ns(st)),
+            b'acl_access' : None
         }
         if self.numeric_owner:
             item[b'user'] = item[b'group'] = None

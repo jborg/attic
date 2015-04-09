@@ -36,7 +36,7 @@ def _check(rv, path=None):
         raise OSError(get_errno(), path)
     return rv
 
-if sys.platform.startswith('linux'):
+if sys.platform.startswith('linux') or sys.platform.startswith('cygwin'):
     libc.llistxattr.argtypes = (c_char_p, c_char_p, c_size_t)
     libc.llistxattr.restype = c_ssize_t
     libc.flistxattr.argtypes = (c_int, c_char_p, c_size_t)
