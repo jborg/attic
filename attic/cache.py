@@ -31,6 +31,7 @@ class Cache(object):
     def __init__(self, repository, key, manifest, path=None, sync=True, warn_if_unencrypted=True):
         self.lock = None
         self.timestamp = None
+        self.lock = None
         self.txn_active = False
         self.repository = repository
         self.key = key
@@ -74,7 +75,7 @@ class Cache(object):
         return answer and answer in 'Yy'
 
     def create(self):
-        """Create a new empty cache at `path`
+        """Create a new empty cache at `self.path`
         """
         os.makedirs(self.path)
         with open(os.path.join(self.path, 'README'), 'w') as fd:
@@ -89,6 +90,13 @@ class Cache(object):
         ChunkIndex().write(os.path.join(self.path, 'chunks').encode('utf-8'))
         with open(os.path.join(self.path, 'files'), 'w') as fd:
             pass  # empty file
+
+    def destroy(self):
+        """destroy the cache at `self.path`
+        """
+        self.close()
+        os.remove(os.path.join(self.path, 'config'))  # kill config first
+        shutil.rmtree(self.path)
 
     def open(self):
         if not os.path.isdir(self.path):
