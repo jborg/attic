@@ -22,13 +22,13 @@ Examples
 ::
 
     # Local repository
-    $ attic init /data/mybackuprepo.attic
+    $ attic init /data/myrepo
 
     # Remote repository
-    $ attic init user@hostname:mybackuprepo.attic
+    $ attic init user@hostname:/data/myrepo
 
     # Encrypted remote repository
-    $ attic init --encryption=passphrase user@hostname:mybackuprepo.attic
+    $ attic init --encryption=passphrase user@hostname:/data/myrepo
 
 
 .. include:: usage/create.rst.inc
@@ -38,17 +38,17 @@ Examples
 ::
 
     # Backup ~/Documents into an archive named "my-documents"
-    $ attic create /data/myrepo.attic::my-documents ~/Documents
+    $ attic create /data/myrepo::my-documents ~/Documents
 
     # Backup ~/Documents and ~/src but exclude pyc files
-    $ attic create /data/myrepo.attic::my-files   \
+    $ attic create /data/myrepo::my-files   \
         ~/Documents                               \
         ~/src                                     \
         --exclude '*.pyc'
 
     # Backup the root filesystem into an archive named "root-YYYY-MM-DD"
     NAME="root-`date +%Y-%m-%d`"
-    $ attic create /data/myrepo.attic::$NAME / --do-not-cross-mountpoints
+    $ attic create /data/myrepo::$NAME / --do-not-cross-mountpoints
 
 
 .. include:: usage/extract.rst.inc
@@ -154,19 +154,19 @@ Examples
 ::
 
     # Create a key file protected repository
-    $ attic init --encryption=keyfile /tmp/encrypted-repo
-    Initializing repository at "/tmp/encrypted-repo"
+    $ attic init --encryption=keyfile /data/myrepo
+    Initializing repository at "/data/myrepo"
     Enter passphrase (empty for no passphrase):
     Enter same passphrase again: 
-    Key file "/home/USER/.attic/keys/tmp_encrypted_repo" created.
+    Key file "/home/USER/.attic/keys/data_myrepo" created.
     Keep this file safe. Your data will be inaccessible without it.
 
     # Change key file passphrase
-    $ attic change-passphrase /tmp/encrypted-repo
-    Enter passphrase for key file /home/USER/.attic/keys/tmp_encrypted_repo: 
+    $ attic change-passphrase /data/myrepo
+    Enter passphrase for key file /home/USER/.attic/keys/data_myrepo: 
     New passphrase: 
     Enter same passphrase again: 
-    Key file "/home/USER/.attic/keys/tmp_encrypted_repo" updated
+    Key file "/home/USER/.attic/keys/data_myrepo" updated
 
 .. include:: usage/serve.rst.inc
 
@@ -174,7 +174,7 @@ Examples
 ~~~~~~~~
 ::
 
-    # Allow an SSH keypair to only run attic, and only have access to repo.attic
+    # Allow an SSH keypair to only run attic, and only have access to /data/myrepo
     # This will help to secure an automated remote backup system.
     $ cat ~/.ssh/authorized_keys
-    command="attic serve --restrict-to-path /path/to/repo.attic" ssh-rsa AAAAB3[...]
+    command="attic serve --restrict-to-path /data/myrepo" ssh-rsa AAAAB3[...]
