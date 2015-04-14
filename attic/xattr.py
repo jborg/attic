@@ -8,10 +8,10 @@ from ctypes import CDLL, create_string_buffer, c_ssize_t, c_size_t, c_char_p, c_
 from ctypes.util import find_library
 
 
-def is_enabled():
+def is_enabled(path=None):
     """Determine if xattr is enabled on the filesystem
     """
-    with tempfile.NamedTemporaryFile() as fd:
+    with tempfile.NamedTemporaryFile(dir=path) as fd:
         try:
             setxattr(fd.fileno(), 'user.name', b'value')
         except OSError:
@@ -248,4 +248,14 @@ elif sys.platform.startswith('freebsd'):
         _check(func(path, EXTATTR_NAMESPACE_USER, name, value, len(value) if value else 0), path)
 
 else:
-    raise Exception('Unsupported platform: %s' % sys.platform)
+    # this is a dummy xattr interface for platforms for which we do not have
+    # a real implementation (or which do not support xattr at all).
+
+    def listxattr(path, *, follow_symlinks=True):
+        return []
+
+    def getxattr(path, name, *, follow_symlinks=True):
+        return
+
+    def setxattr(path, name, value, *, follow_symlinks=True):
+        return
