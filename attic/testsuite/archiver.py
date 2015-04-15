@@ -16,6 +16,7 @@ from attic.archiver import Archiver
 from attic.cache import Cache
 from attic.crypto import bytes_to_long, num_aes_blocks
 from attic.helpers import Manifest
+from attic.key import parser
 from attic.remote import RemoteRepository, PathNotAllowed
 from attic.repository import Repository
 from attic.testsuite import AtticTestCase
@@ -412,8 +413,9 @@ class ArchiverTestCase(ArchiverTestCaseBase):
                 hash = sha256(data).digest()
                 if not hash in seen:
                     seen.add(hash)
-                    num_blocks = num_aes_blocks(len(data) - 41)
-                    nonce = bytes_to_long(data[33:41])
+                    meta, data, _, _, _ = parser(data)
+                    num_blocks = num_aes_blocks(len(data))
+                    nonce = bytes_to_long(meta.stored_iv)
                     for counter in range(nonce, nonce + num_blocks):
                         self.assert_not_in(counter, used)
                         used.add(counter)
