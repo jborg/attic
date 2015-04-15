@@ -198,11 +198,18 @@ def update_excludes(args):
             file.close()
 
 
-def adjust_patterns(paths, excludes):
+def adjust_include_patterns(paths, excludes):
     if paths:
         return (excludes or []) + [IncludePattern(path) for path in paths] + [ExcludePattern('*')]
     else:
         return excludes
+
+
+def adjust_exclude_patterns(path, excludes):
+    if excludes:
+        return [pattern for pattern in excludes if not pattern.match(path)]
+    else:
+        return []
 
 
 def exclude_path(path, patterns):
@@ -581,4 +588,3 @@ def int_to_bigint(value):
     if value.bit_length() > 63:
         return value.to_bytes((value.bit_length() + 9) // 8, 'little', signed=True)
     return value
-

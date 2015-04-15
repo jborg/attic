@@ -250,6 +250,17 @@ class ArchiverTestCase(ArchiverTestCaseBase):
             self.attic('extract', '--exclude-from=' + self.exclude_file_path, self.repository_location + '::test')
         self.assert_equal(sorted(os.listdir('output/input')), ['file1', 'file3'])
 
+    def test_subtree_include_exclude(self):
+        self.attic('init', self.repository_location)
+        self.create_regular_file('file1', size=1024 * 80)
+        self.create_regular_file('unwanted/file2', size=1024 * 80)
+        self.create_regular_file('unwanted/wanted/file3', size=1024 * 80)
+        self.attic('create', '--exclude=input/unwanted', self.repository_location + '::test', 'input', 'input/unwanted/wanted')
+        with changedir('output'):
+            self.attic('extract', self.repository_location + '::test', 'input')
+        self.assert_equal(sorted(os.listdir('output/input')), ['file1', 'unwanted'])
+        self.assert_equal(sorted(os.listdir('output/input/unwanted')), ['wanted'])
+
     def test_exclude_caches(self):
         self.attic('init', self.repository_location)
         self.create_regular_file('file1', size=1024 * 80)
