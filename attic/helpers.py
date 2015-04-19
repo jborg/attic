@@ -1,5 +1,6 @@
 import argparse
 import binascii
+import errno
 import grp
 import msgpack
 import os
@@ -262,6 +263,40 @@ class ExcludePattern(IncludePattern):
 
     def __repr__(self):
         return '%s(%s)' % (type(self), self.pattern)
+
+
+def timestamp(s):
+    """Convert a --timestamp=s argument to a datetime object"""
+    try:
+        # is it pointing to a file / directory?
+        ts = os.stat(s).st_mtime
+        return datetime.utcfromtimestamp(ts)
+    except OSError as err:
+        if err.errno != errno.ENOENT:
+            raise argparse.ArgumentTypeError('Could not access timestamp file: %s' % err)
+    # file not found, try parsing as ISO-8601 timestamp.
+    for date_format in ('%Y-%m-%d',
+                        '%Y-%j',
+                        ):
+        for time_format in ('%H:%M:%S.%f',
+                            '%H:%M:%S',
+                            '%H:%M',
+                            '%H',  # unusual, but fits in scheme
+                            '',
+                       ):
+            tz_format = 'Z'  # UTC only, require Z suffix
+            dt_sep = 'T'
+            if time_format:
+                format = date_format + dt_sep + time_format + tz_format
+            else:
+                format = date_format + tz_format
+            try:
+                return datetime.strptime(s, format)
+            except ValueError:
+                pass
+    # nothing worked :(
+    raise argparse.ArgumentTypeError('Unsupported or invalid ISO-8601 timestamp. '
+                                     'Try: yyyy-mm-ddThh:mm:ss.ffffffZ (or a less precise version).')
 
 
 def is_cachedir(path):
