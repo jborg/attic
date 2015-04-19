@@ -1,5 +1,6 @@
 import argparse
 import binascii
+import errno
 import grp
 import msgpack
 import os
@@ -263,18 +264,32 @@ def timestamp(s):
         # is it pointing to a file / directory?
         ts = os.stat(s).st_mtime
         return datetime.utcfromtimestamp(ts)
-    except OSError:
-        # didn't work, try parsing as timestamp. UTC, no TZ, no microsecs support.
-        for format in ('%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%dT%H:%M:%S+00:00',
-                       '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S',
-                       '%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M',
-                       '%Y-%m-%d', '%Y-%j',
+    except OSError as err:
+        if err.errno != errno.ENOENT:
+            raise argparse.ArgumentTypeError('Could not access timestamp file: %s' % err)
+    # file not found, try parsing as ISO-8601 timestamp.
+    for date_format in ('%Y-%m-%d',
+                        '%Y-%j',
+                        ):
+        for time_format in ('%H:%M:%S.%f',
+                            '%H:%M:%S',
+                            '%H:%M',
+                            '%H',  # unusual, but fits in scheme
+                            '',
                        ):
+            tz_format = 'Z'  # UTC only, require Z suffix
+            dt_sep = 'T'
+            if time_format:
+                format = date_format + dt_sep + time_format + tz_format
+            else:
+                format = date_format + tz_format
             try:
                 return datetime.strptime(s, format)
             except ValueError:
-                continue
-        raise ValueError
+                pass
+    # nothing worked :(
+    raise argparse.ArgumentTypeError('Unsupported or invalid ISO-8601 timestamp. '
+                                     'Try: yyyy-mm-ddThh:mm:ss.ffffffZ (or a less precise version).')
 
 
 def is_cachedir(path):

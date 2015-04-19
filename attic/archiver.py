@@ -553,9 +553,11 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                                help='only store numeric user and group identifiers')
         subparser.add_argument('--timestamp', dest='timestamp',
                                type=timestamp, default=None,
-                               metavar='yyyy-mm-ddThh:mm:ss',
-                               help='manually specify the archive creation date/time (UTC). '
-                                    'alternatively, give a reference file/directory.')
+                               metavar='TIMESTAMP',
+                               help='use TIMESTAMP as the archive creation time. '
+                                    'TIMESTAMP can be either a string of the form YYYY-MM-DDThh:mm:ss.ffffffZ '
+                                    '(or less precise versions without fractions of a second, seconds, minutes, hours) '
+                                    'or a file/directory name from which the modification time is used.')
         subparser.add_argument('archive', metavar='ARCHIVE',
                                type=location_validator(archive=True),
                                help='archive to create')
