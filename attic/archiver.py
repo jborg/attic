@@ -555,8 +555,8 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                                type=timestamp, default=None,
                                metavar='TIMESTAMP',
                                help='use TIMESTAMP as the archive creation time. '
-                                    'TIMESTAMP can be either a string of the form YYYY-MM-DDThh:mm:ss.ffffffZ '
-                                    '(or less precise versions without fractions of a second, seconds, minutes, hours) '
+                                    'TIMESTAMP can be either a string of the form YYYY-MM-DDThh:mm:ss[Z] '
+                                    '(or less precise versions without seconds, minutes, hours) '
                                     'or a file/directory name from which the modification time is used.')
         subparser.add_argument('archive', metavar='ARCHIVE',
                                type=location_validator(archive=True),

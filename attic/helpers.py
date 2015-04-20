@@ -2,6 +2,7 @@ import argparse
 import binascii
 import errno
 import grp
+import itertools
 import msgpack
 import os
 import pwd
@@ -182,7 +183,14 @@ def get_cache_dir():
 
 def to_localtime(ts):
     """Convert datetime object from UTC to local time zone"""
+    # note: this drops the microseconds
     return datetime(*time.localtime((ts - datetime(1970, 1, 1, tzinfo=timezone.utc)).total_seconds())[:6])
+
+
+def from_localtime(ts):
+    """Convert datetime object from local time zone to UTC"""
+    # note: this drops the microseconds
+    return datetime.utcfromtimestamp(time.mktime(ts.timetuple()))
 
 
 def update_excludes(args):
@@ -262,33 +270,24 @@ def timestamp(s):
     try:
         # is it pointing to a file / directory?
         ts = os.stat(s).st_mtime
+        ts = int(ts)  # no fractions of a second
         return datetime.utcfromtimestamp(ts)
     except OSError as err:
         if err.errno != errno.ENOENT:
             raise argparse.ArgumentTypeError('Could not access timestamp file: %s' % err)
     # file not found, try parsing as ISO-8601 timestamp.
-    for date_format in ('%Y-%m-%d',
-                        '%Y-%j',
-                        ):
-        for time_format in ('%H:%M:%S.%f',
-                            '%H:%M:%S',
-                            '%H:%M',
-                            '%H',  # unusual, but fits in scheme
-                            '',
-                       ):
-            tz_format = 'Z'  # UTC only, require Z suffix
-            dt_sep = 'T'
-            if time_format:
-                format = date_format + dt_sep + time_format + tz_format
-            else:
-                format = date_format + tz_format
-            try:
-                return datetime.strptime(s, format)
-            except ValueError:
-                pass
+    date_formats = ['%Y-%m-%d', '%Y-%j']
+    time_formats = ['T%H:%M:%S', 'T%H:%M', 'T%H', '']
+    tz_formats = ['Z', '']  # UTC or localtime
+    for format in itertools.product(date_formats, time_formats, tz_formats):
+        try:
+            dt = datetime.strptime(s, ''.join(format))
+            return dt if format[2] == 'Z' else from_localtime(dt)
+        except ValueError:
+            pass
     # nothing worked :(
     raise argparse.ArgumentTypeError('Unsupported or invalid ISO-8601 timestamp. '
-                                     'Try: yyyy-mm-ddThh:mm:ss.ffffffZ (or a less precise version).')
+                                     'Try: yyyy-mm-ddThh:mm:ss[Z] (or a less precise version).')
 
 
 def is_cachedir(path):

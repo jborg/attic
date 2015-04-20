@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 from time import mktime, strptime
 from datetime import datetime, timezone, timedelta
@@ -5,7 +6,7 @@ import os
 import tempfile
 import unittest
 from attic.helpers import adjust_patterns, exclude_path, Location, format_timedelta, IncludePattern, ExcludePattern, make_path_safe, UpgradableLock, prune_within, prune_split, to_localtime, \
-    StableDict, int_to_bigint, bigint_to_int
+    StableDict, int_to_bigint, bigint_to_int, timestamp
 from attic.testsuite import AtticTestCase
 import msgpack
 
@@ -69,6 +70,29 @@ class FormatTimedeltaTestCase(AtticTestCase):
             format_timedelta(t1 - t0),
             '2 hours 1.10 seconds'
         )
+
+
+class TimestampTestCase(AtticTestCase):
+
+    def test_str(self):
+        self.assert_equal(timestamp('2001-02-03T04:05:06Z'), datetime(2001, 2, 3, 4, 5, 6))
+        self.assert_equal(timestamp('2001-02-03T04:05Z'), datetime(2001, 2, 3, 4, 5, 0))
+        self.assert_equal(timestamp('2001-02-03T04Z'), datetime(2001, 2, 3, 4, 0, 0))
+        self.assert_equal(timestamp('2001-02-03Z'), datetime(2001, 2, 3, 0, 0, 0))
+        self.assert_equal(timestamp('2001-034Z'), datetime(2001, 2, 3, 0, 0, 0))
+
+    def test_file(self):
+        with tempfile.NamedTemporaryFile() as f:
+            mtime = os.stat(f.name).st_mtime
+            mtime = int(mtime)  # no fractions of a second
+            mtime_dt = datetime.utcfromtimestamp(mtime)
+            self.assert_equal(timestamp(f.name), mtime_dt)
+
+    def test_invalid(self):
+        self.assert_raises(argparse.ArgumentTypeError, timestamp, '/file/not/found')
+        self.assert_raises(argparse.ArgumentTypeError, timestamp, '31.12.1999')
+        self.assert_raises(argparse.ArgumentTypeError, timestamp, '2015-12-32Z')
+        self.assert_raises(argparse.ArgumentTypeError, timestamp, '2015-12-31T24:23Z')
 
 
 class PatternTestCase(AtticTestCase):
