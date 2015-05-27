@@ -197,6 +197,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                           numeric_owner=args.numeric_owner)
         patterns = adjust_patterns(args.paths, args.excludes)
         dry_run = args.dry_run
+        sparse = args.sparse
         strip_components = args.strip_components
         dirs = []
         for item in archive.iter_items(lambda item: not exclude_path(item[b'path'], patterns), preload=True):
@@ -217,7 +218,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                         dirs.append(item)
                         archive.extract_item(item, restore_attrs=False)
                     else:
-                        archive.extract_item(item)
+                        archive.extract_item(item, sparse=sparse)
             except IOError as e:
                 self.print_error('%s: %s', remove_surrogates(orig_path), e)
 
@@ -587,6 +588,9 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         subparser.add_argument('--strip-components', dest='strip_components',
                                type=int, default=0, metavar='NUMBER',
                                help='Remove the specified number of leading path elements. Pathnames with fewer elements will be silently skipped.')
+        subparser.add_argument('--sparse', dest='sparse',
+                               action='store_true', default=False,
+                               help='create holes in output sparse file from all-zero chunks')
         subparser.add_argument('archive', metavar='ARCHIVE',
                                type=location_validator(archive=True),
                                help='archive to extract')
