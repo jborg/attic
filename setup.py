@@ -120,5 +120,7 @@ setup(
     scripts=['scripts/attic'],
     cmdclass=cmdclass,
     ext_modules=ext_modules,
-    install_requires=['msgpack-python']
+    # msgpack pure python data corruption was fixed in 0.4.6.
+    # Also, we might use some rather recent API features.
+    install_requires=['msgpack-python>=0.4.6']
 )
