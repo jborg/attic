@@ -523,6 +523,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         This command creates a backup archive containing all files found while recursively
         traversing all paths specified. The archive will consume almost no disk space for
         files or parts of files that have already been stored in other archives.
+        Symbolic links are not followed.
 
         See "attic help patterns" for more help on exclude patterns.
         """)
