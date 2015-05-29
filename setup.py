@@ -120,5 +120,5 @@ setup(
     scripts=['scripts/attic'],
     cmdclass=cmdclass,
     ext_modules=ext_modules,
-    install_requires=['msgpack-python']
+    install_requires=['msgpack-python', 'bintrees']
 )

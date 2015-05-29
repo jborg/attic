@@ -7,8 +7,8 @@ import os
 import stat
 import tempfile
 import time
-from attic.archive import Archive
-from attic.helpers import daemonize
+from attic.archive import Archive, BFSPath
+from attic.helpers import daemonize, format_file_size
 from attic.remote import cache_if_remote
 
 # Does this version of llfuse support ns precision?
@@ -33,49 +33,83 @@ class ItemCache:
 class AtticOperations(llfuse.Operations):
     """Export Attic archive as a fuse filesystem
     """
-    def __init__(self, key, repository, manifest, archive):
+    def __init__(self, key, repository, manifest, archive, verbose=False):
         super(AtticOperations, self).__init__()
         self._inode_count = 0
         self.key = key
         self.repository = cache_if_remote(repository)
         self.items = {}
         self.parent = {}
+        self.itemnames = {}
         self.contents = defaultdict(dict)
         self.default_dir = {b'mode': 0o40755, b'mtime': int(time.time() * 1e9), b'uid': os.getuid(), b'gid': os.getgid()}
-        self.pending_archives = {}
+        self.archives = {}
+        self.processed_items_subsets = {} # per archive
         self.cache = ItemCache()
+        self.verbose = verbose
+
+        # Create root inode
+        self.parent[1] = self.allocate_inode()
+        self.items[1] = self.default_dir
         if archive:
-            self.process_archive(archive)
+            self.archives[1] = archive
         else:
-            # Create root inode
-            self.parent[1] = self.allocate_inode()
-            self.items[1] = self.default_dir
             for archive_name in manifest.archives:
                 # Create archive placeholder inode
                 archive_inode = self.allocate_inode()
                 self.items[archive_inode] = self.default_dir
                 self.parent[archive_inode] = 1
                 self.contents[1][os.fsencode(archive_name)] = archive_inode
-                self.pending_archives[archive_inode] = Archive(repository, key, manifest, archive_name)
+                self.itemnames[archive_inode] = os.fsencode(archive_name)
+                self.archives[archive_inode] = Archive(repository, key, manifest, archive_name)
+                self.processed_items_subsets[archive_inode] = {}
 
-    def process_archive(self, archive, prefix=[]):
-        """Build fuse inode hierarchy from archive metadata
-        """
+    def _load_items_subset(self, items, processed_items, index, skipbytes, length, prefix):
+        stats = { 'bytes': 0, 'chunks': 0, 'inodes': 0 }
+
+        # Skip subset if already loaded:
+        if index in processed_items:
+            return processed_items[index]
+
         unpacker = msgpack.Unpacker()
-        for key, chunk in zip(archive.metadata[b'items'], self.repository.get_many(archive.metadata[b'items'])):
+        # Keep track of current segments to return afterwards
+        final_segments = None
+        for id in range(index, len(items)):
+            key = items[id]
+
+            if length == 0:
+                break
+
+            chunk = self.repository.get(key)
+            stats['bytes'] += len(chunk)
+            stats['chunks'] += 1
             data = self.key.decrypt(key, chunk)
+            datalength = len(data)
+
+            if length:
+                if length >= datalength:
+                    length -= datalength
+                else:
+                    data = data[:length]
+                    length = 0
+
+            if skipbytes > datalength:
+                skipbytes -= datalength
+                continue
+            elif skipbytes > 0:
+                data = data[skipbytes:]
+                skipbytes = 0
+
             unpacker.feed(data)
             for item in unpacker:
+                stats['inodes'] += 1
                 segments = prefix + os.fsencode(os.path.normpath(item[b'path'])).split(b'/')
                 del item[b'path']
                 num_segments = len(segments)
+                final_segments = segments
+
                 parent = 1
                 for i, segment in enumerate(segments, 1):
-                    # Insert a default root inode if needed
-                    if self._inode_count == 0 and segment:
-                        archive_inode = self.allocate_inode()
-                        self.items[archive_inode] = self.default_dir
-                        self.parent[archive_inode] = parent
                     # Leaf segment?
                     if i == num_segments:
                         if b'source' in item and stat.S_ISREG(item[b'mode']):
@@ -88,6 +122,7 @@ class AtticOperations(llfuse.Operations):
                         self.parent[inode] = parent
                         if segment:
                             self.contents[parent][segment] = inode
+                            self.itemnames[inode] = segment
                     elif segment in self.contents[parent]:
                         parent = self.contents[parent][segment]
                     else:
@@ -96,7 +131,56 @@ class AtticOperations(llfuse.Operations):
                         self.parent[inode] = parent
                         if segment:
                             self.contents[parent][segment] = inode
+                            self.itemnames[inode] = segment
                         parent = inode
+        if self.verbose:
+            print('Fetched {} chunks ({}), unpacked {} inodes' .format(stats['chunks'], format_file_size(stats['bytes']), stats['inodes']))
+        processed_items[index] = final_segments
+        return final_segments
+
+    def _load_pending_item(self, inode, name=None):
+        # Ignore root inode unless it is an archive
+        if inode == 1 and inode not in self.archives:
+            return
+
+        # Follow inode upwards to find archive and obtain the full path of the
+        # requested item:
+        full_segments = [name if name else b'']
+        archive_inode = inode
+        while archive_inode not in self.archives:
+            full_segments.append(self.itemnames[archive_inode])
+            archive_inode = self.parent[archive_inode]
+        full_segments.reverse()
+
+        archive = self.archives[archive_inode]
+
+        if archive_inode != 1:
+            prefix = [os.fsencode(archive.name)]
+        else:
+            prefix = []
+
+        items = archive.metadata[b'items']
+        processed_items = self.processed_items_subsets[archive_inode]
+
+        if archive.metadata[b'version'] >= 2:
+            if name:
+                # Fetch subset containing the requested name
+                index, skipbytes, length = archive.metadata_index.lookup(full_segments)[1]
+                self._load_items_subset(items, processed_items, index, skipbytes, length, prefix)
+            else:
+                # If no specific name is queried, load entire directory by
+                # unpacking subsets for as long as the most recently unpacked path
+                # is 'less than' (in breadth-first ordering) the requested path.
+                for index, skipbytes, length in archive.metadata_index.lookup_many(full_segments):
+                    final_segments = self._load_items_subset(items, processed_items, index, skipbytes, length, prefix)
+                    if final_segments:
+                        if prefix:
+                            final_segments = final_segments[1:]
+                        if BFSPath(final_segments) > BFSPath(full_segments):
+                            break
+        else:
+            # Fetch everything
+            self._load_items_subset(items, processed_items, index=0, skipbytes=0, length=None, prefix=prefix)
 
     def allocate_inode(self):
         self._inode_count += 1
@@ -168,14 +252,8 @@ class AtticOperations(llfuse.Operations):
         except KeyError:
             raise llfuse.FUSEError(errno.ENODATA)
 
-    def _load_pending_archive(self, inode):
-        # Check if this is an archive we need to load
-        archive = self.pending_archives.pop(inode, None)
-        if archive:
-            self.process_archive(archive, [os.fsencode(archive.name)])
-
     def lookup(self, parent_inode, name):
-        self._load_pending_archive(parent_inode)
+        self._load_pending_item(parent_inode, name)
         if name == b'.':
             inode = parent_inode
         elif name == b'..':
@@ -190,7 +268,7 @@ class AtticOperations(llfuse.Operations):
         return inode
 
     def opendir(self, inode):
-        self._load_pending_archive(inode)
+        self._load_pending_item(inode)
         return inode
 
     def read(self, fh, offset, size):
