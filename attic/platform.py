@@ -1,6 +1,7 @@
 import os
 import subprocess
 import io
+import logging
 
 platform = os.uname()[0]
 
@@ -17,18 +18,18 @@ elif platform.startswith('CYGWIN'):
         try:
             # Using non-numeric names, i.e., group names, has caused problems.
             # Hence the -n option
-            ACL_text = subprocess.check_output(['getfacl.exe', '-n', path])
-            item[b'acl_access'] = ACL_text
-        except:
-            pass
+            acl_text = subprocess.check_output(['getfacl.exe', '-n', path])
+            item[b'acl_access'] = acl_text
+        except CalledProcessError as e:
+            logging.warning('getfacl.exe failed with error code: ' + e.returncode)
 
     def acl_set(path, item, numeric_owner=False):
         try:
-            ACL_Access = item[b'acl_access']
-        except:
-            return 
-        
-        buf = io.StringIO(ACL_Access.decode('utf-8'))
+            acl_access = item[b'acl_access']
+        except KeyError:
+            return
+
+        buf = io.StringIO(acl_access.decode('utf-8'))
 
         for line in buf:
             if len(line.strip()) > 0 and (not line.strip().startswith('#')):
@@ -36,7 +37,7 @@ elif platform.startswith('CYGWIN'):
                 retVal = subprocess.call(param)
                 if retVal != 0:
                     raise Exception('ACLs not set successfully')
-                                      
+
 else:
     API_VERSION = 1
 
