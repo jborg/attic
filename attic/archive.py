@@ -410,9 +410,10 @@ class Archive:
                 chunks = [cache.chunk_incref(id_, self.stats) for id_ in ids]
         # Only chunkify the file if needed
         if chunks is None:
-            with Archive._open_rb(path, st) as fd:
+            fh = Archive._open_rb(path, st)
+            with os.fdopen(fh, 'rb') as fd:
                 chunks = []
-                for chunk in self.chunker.chunkify(fd):
+                for chunk in self.chunker.chunkify(fd, fh):
                     chunks.append(cache.add_chunk(self.key.id_hash(chunk), chunk, self.stats))
             cache.memorize_file(path_hash, st, [c[0] for c in chunks])
         item = {b'path': safe_path, b'chunks': chunks}
@@ -427,38 +428,41 @@ class Archive:
 
     @staticmethod
     def _open_rb(path, st):
-        flags_noatime = None
+        flags_normal = os.O_RDONLY | getattr(os, 'O_BINARY', 0)
+        flags_noatime = flags_normal | getattr(os, 'NO_ATIME', 0)
         euid = None
 
         def open_simple(p, s):
-            return open(p, 'rb')
-
-        def open_noatime_if_owner(p, s):
-            if s.st_uid == euid:
-                return os.fdopen(os.open(p, flags_noatime), 'rb')
-            else:
-                return open(p, 'rb')
+            return os.open(p, flags_normal)
 
         def open_noatime(p, s):
+            return os.open(p, flags_noatime)
+
+        def open_noatime_if_owner(p, s):
+            if euid == 0 or s.st_uid == euid:
+                # we are root or owner of file
+                return open_noatime(p, s)
+            else:
+                return open_simple(p, s)
+
+        def open_noatime_with_fallback(p, s):
             try:
                 fd = os.open(p, flags_noatime)
             except PermissionError:
                 # Was this EPERM due to the O_NOATIME flag?
-                fo = open(p, 'rb')
+                fd = os.open(p, flags_normal)
                 # Yes, it was -- otherwise the above line would have thrown
                 # another exception.
+                nonlocal euid
                 euid = os.geteuid()
                 # So in future, let's check whether the file is owned by us
                 # before attempting to use O_NOATIME.
                 Archive._open_rb = open_noatime_if_owner
-                return fo
-            return os.fdopen(fd, 'rb')
+            return fd
 
-        o_noatime = getattr(os, 'O_NOATIME', None)
-        if o_noatime is not None:
-            flags_noatime = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | o_noatime
+        if flags_noatime != flags_normal:
             # Always use O_NOATIME version.
-            Archive._open_rb = open_noatime
+            Archive._open_rb = open_noatime_with_fallback
         else:
             # Always use non-O_NOATIME version.
             Archive._open_rb = open_simple

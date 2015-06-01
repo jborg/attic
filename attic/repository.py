@@ -577,6 +577,10 @@ class LoggedIO(object):
         if self._write_fd:
             self.segment += 1
             self.offset = 0
-            os.fsync(self._write_fd)
+            os.fsync(self._write_fd.fileno())
+            if hasattr(os, 'posix_fadvise'):  # python >= 3.3, only on UNIX
+                # tell the OS that it does not need to cache what we just wrote,
+                # avoids spoiling the cache for the OS and other processes.
+                os.posix_fadvise(self._write_fd.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
             self._write_fd.close()
             self._write_fd = None
