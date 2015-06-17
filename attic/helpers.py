@@ -528,6 +528,63 @@ def make_path_safe(path):
     """
     return _safe_re.sub('', path) or '.'
 
+def iter_delim(f, delim='\n', delim_out=None, read_size=4096):
+    """Iterate through a file object's contents, given a delimiter.
+
+    This function returns an iterator based on the contents of the
+    file-like object f. The contents will be split into chunks based
+    on delim, and each chunk is returned by the iterator created. By
+    default, the original delimiter is retained, but a replacement can
+    be specified using delim_out.
+
+    Both text and binary files are supported, but the type of delim
+    and delim_out must match the file type, i.e. they must be strings
+    for text files, and bytes for binary files.
+
+    """
+    if delim_out is None:
+        delim_out = delim
+    bufs = []
+    empty = None
+    while True:
+        data = f.read(read_size)
+        if not data:
+            break
+        if empty is None:
+            empty = '' if isinstance(data, str) else b''
+        start = 0
+        while True:
+            pos = data.find(delim, start)
+            if pos < 0:
+                break
+            yield empty.join(bufs) + data[start:pos] + delim_out
+            start = pos + len(delim)
+            bufs = []
+        if start < len(data):
+            bufs.append(data[start:])
+    if len(bufs) > 0:
+        yield empty.join(bufs)
+
+class FileType(argparse.FileType):
+    """Extended version of argparse.FileType.
+
+    Allows to specify additional attributes to be set on the returned
+    file objects.
+
+    """
+    def __init__(self, mode='r', bufsize=-1, **kwargs):
+        super().__init__(mode=mode, bufsize=bufsize)
+        self._attrs = kwargs
+        self._binary = 'b' in mode
+
+    def __call__(self, string):
+        result = super().__call__(string)
+        # Work around http://bugs.python.org/issue14156
+        if self._binary and result is sys.stdin or result is sys.stdout:
+            result = result.buffer
+        for key, value in self._attrs.items():
+            setattr(result, key, value)
+        return result
 
 def daemonize():
     """Detach process from controlling terminal and run in background
