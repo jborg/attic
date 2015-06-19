@@ -118,6 +118,8 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                 pass
         for f in args.filelists:
             self._process_filelist(archive, cache, skip_inodes, f)
+            if not (f is sys.stdin or f is getattr(sys.stdin, 'buffer', None)):
+                f.close()
         for path in args.paths:
             path = os.path.normpath(path)
             if args.dontcross:

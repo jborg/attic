@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import time
 import unittest
+import itertools
 from hashlib import sha256
 from attic import xattr
 from attic.archive import Archive, ChunkBuffer
@@ -59,6 +60,9 @@ class environment_variable:
             if v is not None:
                 os.environ[k] = v
 
+def listdir_recursive(dirname):
+    return itertools.chain(*[[os.path.normpath(os.path.join(dirpath, f)) for f in filenames]
+                             for dirpath, dirnames, filenames in os.walk(dirname)])
 
 class ArchiverTestCaseBase(AtticTestCase):
 
@@ -261,6 +265,27 @@ class ArchiverTestCase(ArchiverTestCaseBase):
             self.attic('extract', self.repository_location + '::test')
         self.assert_equal(sorted(os.listdir('output/input')), ['cache2', 'file1'])
         self.assert_equal(sorted(os.listdir('output/input/cache2')), ['CACHEDIR.TAG'])
+
+    def test_files_from(self):
+        self._test_files_from_option(delim=b'\n', option='--files-from')
+
+    def test_files_from0(self):
+        self._test_files_from_option(delim=b'\0', option='--files-from0')
+
+    def _test_files_from_option(self, *, delim, option):
+        self.attic('init', self.repository_location)
+        for filename in ['file1', 'non-listed/file', 'listed/file']:
+            self.create_regular_file(filename, size=1024 * 80)
+        listed_files = sorted(['file1', 'listed/file'])
+        self.create_regular_file('filelist',
+                                 contents=delim.join([os.path.join('input', f).encode('ascii')
+                                                      for f in listed_files]))
+        self.attic('create', option + '=input/filelist', self.repository_location + '::test')
+        with changedir('output'):
+            self.attic('extract', self.repository_location + '::test')
+        with changedir('output/input'):
+            present_files = sorted(listdir_recursive('.'))
+        self.assert_equal(present_files, listed_files)
 
     def test_path_normalization(self):
         self.attic('init', self.repository_location)
