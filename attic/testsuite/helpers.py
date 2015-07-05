@@ -6,7 +6,7 @@ import io
 import tempfile
 import unittest
 from attic.helpers import adjust_patterns, exclude_path, Location, format_timedelta, IncludePattern, ExcludePattern, make_path_safe, UpgradableLock, prune_within, prune_split, to_localtime, \
-    StableDict, int_to_bigint, bigint_to_int, parse_timestamp, iter_delim
+    StableDict, int_to_bigint, bigint_to_int, parse_timestamp, iter_delim, FileType
 from attic.testsuite import AtticTestCase
 import msgpack
 
@@ -300,3 +300,33 @@ class TestIterDelim(AtticTestCase):
     def _delim_binary(self, content, delim=b'\0', delim_out=None):
         return list(iter_delim(io.BytesIO(content), delim=delim, delim_out=delim_out))
 
+
+class TestFileType(AtticTestCase):
+    def test_attr(self):
+        f = FileType(delim='\0', foobar=42)('-')
+        self.assert_equal(f.delim, '\0')
+        self.assert_equal(f.foobar, 42)
+
+    def test_text_stdin(self):
+        f = FileType(mode='r', delim='\n')('-')
+        self.assert_equal(f.delim, '\n')
+        self.assert_true(isinstance(f, io.IOBase))
+        self.assert_equal(isinstance(f, io.TextIOBase), True)
+
+    def test_text_stdout(self):
+        f = FileType(mode='w', delim='\n')('-')
+        self.assert_equal(f.delim, '\n')
+        self.assert_true(isinstance(f, io.IOBase))
+        self.assert_equal(isinstance(f, io.TextIOBase), True)
+
+    def test_binary_stdin(self):
+        f = FileType(mode='rb', delim=b'\0')('-')
+        self.assert_equal(f.delim, b'\0')
+        self.assert_true(isinstance(f, io.IOBase))
+        self.assert_equal(isinstance(f, io.TextIOBase), False)
+
+    def test_binary_stdout(self):
+        f = FileType(mode='wb', delim=b'\0')('-')
+        self.assert_equal(f.delim, b'\0')
+        self.assert_true(isinstance(f, io.IOBase))
+        self.assert_equal(isinstance(f, io.TextIOBase), False)

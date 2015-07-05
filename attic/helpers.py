@@ -580,7 +580,7 @@ class FileType(argparse.FileType):
     def __call__(self, string):
         result = super().__call__(string)
         # Work around http://bugs.python.org/issue14156
-        if self._binary and result is sys.stdin or result is sys.stdout:
+        if self._binary and (result is sys.stdin or result is sys.stdout):
             result = result.buffer
         for key, value in self._attrs.items():
             setattr(result, key, value)
