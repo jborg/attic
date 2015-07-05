@@ -1,11 +1,13 @@
 import hashlib
 from time import mktime, strptime
 from datetime import datetime, timezone, timedelta
+import sys
 import os
+import io
 import tempfile
 import unittest
 from attic.helpers import adjust_patterns, exclude_path, Location, format_timedelta, IncludePattern, ExcludePattern, make_path_safe, UpgradableLock, prune_within, prune_split, to_localtime, \
-    StableDict, int_to_bigint, bigint_to_int, parse_timestamp
+    StableDict, int_to_bigint, bigint_to_int, parse_timestamp, iter_delim, FileType
 from attic.testsuite import AtticTestCase
 import msgpack
 
@@ -216,3 +218,123 @@ class TestParseTimestamp(AtticTestCase):
     def test(self):
         self.assert_equal(parse_timestamp('2015-04-19T20:25:00.226410'), datetime(2015, 4, 19, 20, 25, 0, 226410, timezone.utc))
         self.assert_equal(parse_timestamp('2015-04-19T20:25:00'), datetime(2015, 4, 19, 20, 25, 0, 0, timezone.utc))
+
+
+class TestIterDelim(AtticTestCase):
+    def test_text_basic(self):
+        self.assert_equal(self._delim_text(''), [])
+        self.assert_equal(self._delim_text('last line'), ['last line'])
+        self.assert_equal(self._delim_text('first line\nsecond line\n'),
+                          ['first line\n', 'second line\n'])
+        self.assert_equal(self._delim_text('line 1\n\nline 3'),
+                          ['line 1\n', '\n', 'line 3'])
+        self.assert_equal(self._delim_text('\n\nline 3\n'),
+                          ['\n', '\n', 'line 3\n'])
+
+    def test_text_delim_out(self):
+        self.assert_equal(self._delim_text('last line', delim_out='\r\n'),
+                          ['last line'])
+        self.assert_equal(self._delim_text('first line\nsecond line\n', delim_out=''),
+                          ['first line', 'second line'])
+        self.assert_equal(self._delim_text('line 1\n\nline 3', delim_out=''),
+                          ['line 1', '', 'line 3'])
+        self.assert_equal(self._delim_text('\n\nline 3\n', delim_out=''),
+                          ['', '', 'line 3'])
+        self.assert_equal(self._delim_text('\n\nline 3\n\nline 5', delim_out='\r\n'),
+                          ['\r\n', '\r\n', 'line 3\r\n', '\r\n', 'line 5'])
+
+    def test_text_crlf(self):
+        self.assert_equal(self._delim_text('last line', delim='\r\n', delim_out='\n'),
+                          ['last line'])
+        self.assert_equal(self._delim_text('first line\nsecond line\r\n',
+                                           delim='\r\n', delim_out='\0'),
+                          ['first line\nsecond line\0'])
+        self.assert_equal(self._delim_text('line 1\r\n\r\nline 3',
+                                           delim='\r\n', delim_out=''),
+                          ['line 1', '', 'line 3'])
+        self.assert_equal(self._delim_text('\r\n\r\nline 3\n', delim='\r\n', delim_out=''),
+                          ['', '', 'line 3\n'])
+        self.assert_equal(self._delim_text('\r\n\r\nline 3\nline 5',
+                                           delim='\r\n', delim_out='\0'),
+                          ['\0', '\0', 'line 3\nline 5'])
+
+    def test_binary_basic(self):
+        self.assert_equal(self._delim_binary(b''), [])
+        self.assert_equal(self._delim_binary(b'last line'), [b'last line'])
+        self.assert_equal(self._delim_binary(b'first line\0second line\0'),
+                          [b'first line\0', b'second line\0'])
+        self.assert_equal(self._delim_binary(b'line 1\0\0line 3'),
+                          [b'line 1\0', b'\0', b'line 3'])
+        self.assert_equal(self._delim_binary(b'\0\0line 3\0'),
+                          [b'\0', b'\0', b'line 3\0'])
+
+    def test_binary_delim_out(self):
+        self.assert_equal(self._delim_binary(b'last line', delim_out=b'\r\n'),
+                          [b'last line'])
+        self.assert_equal(self._delim_binary(b'first line\0second line\0', delim_out=b''),
+                          [b'first line', b'second line'])
+        self.assert_equal(self._delim_binary(b'line 1\0\0line 3', delim_out=b''),
+                          [b'line 1', b'', b'line 3'])
+        self.assert_equal(self._delim_binary(b'\0\0line 3\0', delim_out=b''),
+                          [b'', b'', b'line 3'])
+        self.assert_equal(self._delim_binary(b'\0\0line 3\0\0line 5', delim_out=b'\r\n'),
+                          [b'\r\n', b'\r\n', b'line 3\r\n', b'\r\n', b'line 5'])
+    
+    def test_binary_crlf(self):
+        self.assert_equal(self._delim_binary(b'last line', delim=b'\r\n', delim_out=b'\n'),
+                          [b'last line'])
+        self.assert_equal(self._delim_binary(b'first line\nsecond line\r\n',
+                                             delim=b'\r\n', delim_out=b'\0'),
+                          [b'first line\nsecond line\0'])
+        self.assert_equal(self._delim_binary(b'line 1\r\n\r\nline 3',
+                                           delim=b'\r\n', delim_out=b''),
+                          [b'line 1', b'', b'line 3'])
+        self.assert_equal(self._delim_binary(b'\r\n\r\nline 3\n', delim=b'\r\n', delim_out=b''),
+                          [b'', b'', b'line 3\n'])
+        self.assert_equal(self._delim_binary(b'\r\n\r\nline 3\0line 5',
+                                             delim=b'\r\n', delim_out=b'\0'),
+                          [b'\0', b'\0', b'line 3\0line 5'])
+
+    def _delim_text(self, text, delim='\n', delim_out=None):
+        return list(iter_delim(io.StringIO(text), delim=delim, delim_out=delim_out))
+
+    def _delim_binary(self, content, delim=b'\0', delim_out=None):
+        return list(iter_delim(io.BytesIO(content), delim=delim, delim_out=delim_out))
+
+
+class TestFileType(AtticTestCase):
+    def test_attr(self):
+        f = FileType(delim='\0', foobar=42)('-')
+        self.assert_equal(f.delim, '\0')
+        self.assert_equal(f.foobar, 42)
+
+    def test_text_stdin(self):
+        f = FileType(mode='r', delim='\n')('-')
+        self.assert_equal(f.delim, '\n')
+        self.assert_true(isinstance(f, io.IOBase))
+        self.assert_equal(isinstance(f, io.TextIOBase), True)
+
+    def test_text_stdout(self):
+        f = FileType(mode='w', delim='\n')('-')
+        self.assert_equal(f.delim, '\n')
+        self.assert_true(isinstance(f, io.IOBase))
+        self.assert_equal(isinstance(f, io.TextIOBase), True)
+
+    def test_binary_stdin(self):
+        f = FileType(mode='rb', delim=b'\0')('-')
+        self.assert_equal(f.delim, b'\0')
+        self.assert_true(isinstance(f, io.IOBase))
+        self.assert_equal(isinstance(f, io.TextIOBase), False)
+
+    def test_binary_stdout(self):
+        # We cannot use the unittest.skipIf decorator here, because
+        # during decorator evaluation, sys.stdout is still having the
+        # 'buffer' attribute, but it gets lost before actually running
+        # the test, if the test suite is run with the '-b' ("Buffer
+        # stdout and stderr during tests") argument.
+        if not hasattr(sys.stdout, 'buffer'):
+            self.skipTest('Need sys.stdout.buffer')
+        f = FileType(mode='wb', delim=b'\0')('-')
+        self.assert_equal(f.delim, b'\0')
+        self.assert_true(isinstance(f, io.IOBase))
+        self.assert_equal(isinstance(f, io.TextIOBase), False)

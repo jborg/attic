@@ -18,7 +18,7 @@ from attic.helpers import Error, location_validator, format_time, \
     format_file_mode, ExcludePattern, exclude_path, adjust_patterns, to_localtime, \
     get_cache_dir, get_keys_dir, format_timedelta, prune_within, prune_split, \
     Manifest, remove_surrogates, update_excludes, format_archive, check_extension_modules, Statistics, \
-    is_cachedir, bigint_to_int
+    is_cachedir, bigint_to_int, iter_delim, FileType
 from attic.remote import RepositoryServer, RemoteRepository
 
 
@@ -116,6 +116,10 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
                 skip_inodes.add((st.st_ino, st.st_dev))
             except IOError:
                 pass
+        for f in args.filelists:
+            self._process_filelist(archive, cache, skip_inodes, f)
+            if not (f is sys.stdin or f is getattr(sys.stdin, 'buffer', None)):
+                f.close()
         for path in args.paths:
             path = os.path.normpath(path)
             if args.dontcross:
@@ -142,7 +146,14 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
             print('-' * 78)
         return self.exit_code
 
-    def _process(self, archive, cache, excludes, exclude_caches, skip_inodes, path, restrict_dev):
+    def _process_filelist(self, archive, cache, skip_inodes, filelist):
+        delim = getattr(filelist, 'delim', b'\n')
+        for filename in iter_delim(filelist, delim=delim, delim_out=b''):
+            self._process(archive, cache,
+                          excludes=[], exclude_caches=False, skip_inodes=skip_inodes,
+                          path=os.fsdecode(filename), restrict_dev=False, recurse=False)
+
+    def _process(self, archive, cache, excludes, exclude_caches, skip_inodes, path, restrict_dev, recurse=True):
         if exclude_path(path, excludes):
             return
         try:
@@ -168,6 +179,8 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
             if exclude_caches and is_cachedir(path):
                 return
             archive.process_item(path, st)
+            if not recurse:
+                return
             try:
                 entries = os.listdir(path)
             except OSError as e:
@@ -544,6 +557,14 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         subparser.add_argument('--exclude-caches', dest='exclude_caches',
                                action='store_true', default=False,
                                help='exclude directories that contain a CACHEDIR.TAG file (http://www.brynosaurus.com/cachedir/spec.html)')
+        subparser.add_argument('--files-from', dest='filelists',
+                               type=FileType('rb'), action='append', default=[],
+                               metavar='FILELIST',
+                               help='read a list of files to backup from FILELIST, separated by newlines')
+        subparser.add_argument('--files-from0', dest='filelists',
+                               type=FileType('rb', delim=b'\0'), action='append', default=[],
+                               metavar='FILELIST',
+                               help='read a list of files to backup from FILELIST, separated by NUL characters')
         subparser.add_argument('-c', '--checkpoint-interval', dest='checkpoint_interval',
                                type=int, default=300, metavar='SECONDS',
                                help='write checkpoint every SECONDS seconds (Default: 300)')
@@ -556,7 +577,7 @@ Type "Yes I am sure" if you understand this and want to continue.\n""")
         subparser.add_argument('archive', metavar='ARCHIVE',
                                type=location_validator(archive=True),
                                help='archive to create')
-        subparser.add_argument('paths', metavar='PATH', nargs='+', type=str,
+        subparser.add_argument('paths', metavar='PATH', nargs='*', type=str,
                                help='paths to archive')
 
         extract_epilog = textwrap.dedent("""
