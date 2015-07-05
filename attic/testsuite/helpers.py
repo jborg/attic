@@ -1,6 +1,7 @@
 import hashlib
 from time import mktime, strptime
 from datetime import datetime, timezone, timedelta
+import sys
 import os
 import io
 import tempfile
@@ -326,6 +327,13 @@ class TestFileType(AtticTestCase):
         self.assert_equal(isinstance(f, io.TextIOBase), False)
 
     def test_binary_stdout(self):
+        # We cannot use the unittest.skipIf decorator here, because
+        # during decorator evaluation, sys.stdout is still having the
+        # 'buffer' attribute, but it gets lost before actually running
+        # the test, if the test suite is run with the '-b' ("Buffer
+        # stdout and stderr during tests") argument.
+        if not hasattr(sys.stdout, 'buffer'):
+            self.skipTest('Need sys.stdout.buffer')
         f = FileType(mode='wb', delim=b'\0')('-')
         self.assert_equal(f.delim, b'\0')
         self.assert_true(isinstance(f, io.IOBase))
