@@ -79,7 +79,7 @@ of old archives::
     # Backup all of /home and /var/www except a few
     # excluded directories
     attic create --stats                            \
-        $REPOSITORY::hostname-`date +%Y-%m-%d`      \
+        $REPOSITORY::`hostname`-`date +%Y-%m-%d`      \
         /home                                       \
         /var/www                                    \
         --exclude /home/*/.cache                    \
