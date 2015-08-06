@@ -145,7 +145,7 @@ hashindex_read(const char *path)
             EPRINTF_PATH(path, "fread failed");
         }
         else {
-            EPRINTF_MSG_PATH(path, "failed to read %ld bytes", sizeof(HashHeader));
+            EPRINTF_MSG_PATH(path, "failed to read %ld bytes", (long) sizeof(HashHeader));
         }
         goto fail;
     }
@@ -185,7 +185,7 @@ hashindex_read(const char *path)
             EPRINTF_PATH(path, "fread failed");
         }
         else {
-            EPRINTF_MSG_PATH(path, "failed to read %ld bytes", length);
+            EPRINTF_MSG_PATH(path, "failed to read %lld bytes", (long long) buckets_length);
         }
         free(index->buckets);
         free(index);
