@@ -68,7 +68,7 @@ class AtticTestCase(unittest.TestCase):
             if has_lchflags:
                 attrs.append('st_flags')
             if not fuse or not os.path.isdir(path1):
-                # dir nlink is always 1 on our fuse fileystem
+                # dir nlink is always 1 on our fuse filesystem
                 attrs.append('st_nlink')
             d1 = [filename] + [getattr(s1, a) for a in attrs]
             d2 = [filename] + [getattr(s2, a) for a in attrs]
