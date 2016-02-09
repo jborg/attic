@@ -9,7 +9,7 @@ import sys
 import tempfile
 
 from .hashindex import NSIndex
-from .helpers import Error, IntegrityError
+from .helpers import Error, IntegrityError, get_tmp_dir
 from .repository import Repository
 
 BUFSIZE = 10 * 1024 * 1024
@@ -267,7 +267,8 @@ class RepositoryCache:
         self.cleanup()
 
     def initialize(self):
-        self.tmppath = tempfile.mkdtemp()
+        tmp_dir = get_tmp_dir()
+        self.tmppath = tempfile.mkdtemp(dir=tmp_dir)
         self.index = NSIndex()
         self.data_fd = open(os.path.join(self.tmppath, 'data'), 'a+b')
 

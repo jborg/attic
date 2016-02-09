@@ -179,6 +179,11 @@ def get_cache_dir():
                           os.path.join(os.path.expanduser('~'), '.cache', 'attic'))
 
 
+def get_tmp_dir():
+    """Determine where to save temporary files"""
+    return os.environ.get('ATTIC_TMP_DIR', None)
+
+
 def to_localtime(ts):
     """Convert datetime object from UTC to local time zone"""
     return datetime(*time.localtime((ts - datetime(1970, 1, 1, tzinfo=timezone.utc)).total_seconds())[:6])
