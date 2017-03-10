@@ -35,8 +35,8 @@ Backups mountable as filesystems
 What do I need?
 ---------------
 Attic requires Python 3.2 or above to work. Besides Python, Attic also requires 
-msgpack-python and sufficiently recent OpenSSL (>= 1.0.0).
-In order to mount archives as filesystems, llfuse is required.
+msgpack-python, libacl headers (available as libacl1-dev on Ubuntu) and sufficiently
+recent OpenSSL (>= 1.0.0). In order to mount archives as filesystems, llfuse is required.
 
 How do I install it?
 --------------------
