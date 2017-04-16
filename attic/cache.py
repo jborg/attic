@@ -31,6 +31,7 @@ class Cache(object):
     def __init__(self, repository, key, manifest, path=None, sync=True, warn_if_unencrypted=True):
         self.lock = None
         self.timestamp = None
+        self.lock = None
         self.txn_active = False
         self.repository = repository
         self.key = key
