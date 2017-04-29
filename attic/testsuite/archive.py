@@ -4,7 +4,7 @@ from attic.archive import CacheChunkBuffer, RobustUnpacker
 from attic.key import PlaintextKey
 
 
-class MockCache:
+class MockCache(object):
 
     def __init__(self):
         self.objects = {}

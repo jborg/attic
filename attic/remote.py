@@ -250,7 +250,7 @@ class RemoteRepository(object):
         self.preload_ids += ids
 
 
-class RepositoryCache:
+class RepositoryCache(object):
     """A caching Repository wrapper
 
     Caches Repository GET operations using a temporary file
