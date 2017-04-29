@@ -22,7 +22,7 @@ from attic.helpers import Error, location_validator, format_time, \
 from attic.remote import RepositoryServer, RemoteRepository
 
 
-class Archiver:
+class Archiver(object):
 
     def __init__(self):
         self.exit_code = 0

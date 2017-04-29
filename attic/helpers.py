@@ -30,7 +30,7 @@ class ExtensionModuleError(Error):
     """The Attic binary extension modules does not seem to be properly installed"""
 
 
-class UpgradableLock:
+class UpgradableLock(object):
 
     class ReadLockFailed(Error):
         """Failed to acquire read lock on {}"""
@@ -79,7 +79,7 @@ def check_extension_modules():
         raise ExtensionModuleError
 
 
-class Manifest:
+class Manifest(object):
 
     MANIFEST_ID = b'\0' * 32
 
@@ -148,7 +148,7 @@ def prune_split(archives, pattern, n, skip=[]):
     return keep
 
 
-class Statistics:
+class Statistics(object):
 
     def __init__(self):
         self.osize = self.csize = self.usize = self.nfiles = 0
@@ -228,7 +228,7 @@ def exclude_path(path, patterns):
 # unify the two cases, we add a path separator to the end of
 # the path before matching.
 
-class IncludePattern:
+class IncludePattern(object):
     """Literal files or directories listed on the command line
     for some operations (e.g. extract, but not create).
     If a directory is specified, all paths that start with that
@@ -402,7 +402,7 @@ def posix_acl_use_stored_uid_gid(acl):
     return ('\n'.join(entries)).encode('ascii')
 
 
-class Location:
+class Location(object):
     """Object representing a repository / archive location
     """
     proto = user = host = port = path = archive = None

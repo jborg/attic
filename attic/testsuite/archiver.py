@@ -32,7 +32,7 @@ has_lchflags = hasattr(os, 'lchflags')
 src_dir = os.path.join(os.getcwd(), os.path.dirname(__file__), '..')
 
 
-class changedir:
+class changedir(object):
     def __init__(self, dir):
         self.dir = dir
 
@@ -44,7 +44,7 @@ class changedir:
         os.chdir(self.old)
 
 
-class environment_variable:
+class environment_variable(object):
     def __init__(self, **values):
         self.values = values
         self.old_values = {}

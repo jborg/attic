@@ -38,7 +38,7 @@ except NameError:
     PermissionError = OSError
 
 
-class DownloadPipeline:
+class DownloadPipeline(object):
 
     def __init__(self, repository, key):
         self.repository = repository
@@ -63,7 +63,7 @@ class DownloadPipeline:
             yield self.key.decrypt(id_, data)
 
 
-class ChunkBuffer:
+class ChunkBuffer(object):
     BUFFER_SIZE = 1 * 1024 * 1024
 
     def __init__(self, key):
@@ -111,7 +111,7 @@ class CacheChunkBuffer(ChunkBuffer):
         return id_
 
 
-class Archive:
+class Archive(object):
 
     class DoesNotExist(Error):
         """Archive {} does not exist"""
@@ -465,7 +465,7 @@ class Archive:
         return Archive._open_rb(path, st)
 
 
-class RobustUnpacker():
+class RobustUnpacker(object):
     """A restartable/robust version of the streaming msgpack unpacker
     """
     item_keys = [msgpack.packb(name) for name in ('path', 'mode', 'source', 'chunks', 'rdev', 'xattrs', 'user', 'group', 'uid', 'gid', 'mtime')]
@@ -524,7 +524,7 @@ class RobustUnpacker():
             return next(self._unpacker)
 
 
-class ArchiveChecker:
+class ArchiveChecker(object):
 
     def __init__(self):
         self.error_found = False

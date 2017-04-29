@@ -15,7 +15,7 @@ from attic.remote import cache_if_remote
 have_fuse_mtime_ns = hasattr(llfuse.EntryAttributes, 'st_mtime_ns')
 
 
-class ItemCache:
+class ItemCache(object):
     def __init__(self):
         self.fd = tempfile.TemporaryFile()
         self.offset = 1000000
