@@ -1,3 +1,8 @@
+Warning
+=======
+This program is retired, i.e. it is no longer under active development.
+You should consider using / switching to another backup program.
+
 What is Attic?
 --------------
 Attic is a deduplicating backup program. The main goal of Attic is to provide
