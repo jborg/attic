@@ -1,3 +1,10 @@
+Dependencies
+------------
+
+````
+    apt install libssl-dev libacl1-dev
+````
+
 What is Attic?
 --------------
 Attic is a deduplicating backup program. The main goal of Attic is to provide
